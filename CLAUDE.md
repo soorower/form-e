@@ -19,7 +19,7 @@ A form-building and surveying web application focused on **transportation mode c
 - **Data Fetching:** TanStack Query (SSR-integrated)
 - **UI:** shadcn/ui + Tailwind CSS v4
 - **Language:** TypeScript
-- **Database:** TBD
+- **Backend/Database:** Convex (reliable-dalmatian-211)
 - **Export:** Excel (.xlsx), CSV, JSON
 
 ## UI Rules

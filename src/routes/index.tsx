@@ -1,87 +1,246 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { useState } from 'react'
+import { Button } from '#/components/ui/button'
 
-export const Route = createFileRoute('/')({ component: App })
+export const Route = createFileRoute('/')({ component: HomePage })
 
-function App() {
+function CarIcon({ className }: { className?: string }) {
   return (
-    <main className="page-wrap px-4 pb-8 pt-14">
-      <section className="island-shell rise-in relative overflow-hidden rounded-[2rem] px-6 py-10 sm:px-10 sm:py-14">
-        <div className="pointer-events-none absolute -left-20 -top-24 h-56 w-56 rounded-full bg-[radial-gradient(circle,rgba(79,184,178,0.32),transparent_66%)]" />
-        <div className="pointer-events-none absolute -bottom-20 -right-20 h-56 w-56 rounded-full bg-[radial-gradient(circle,rgba(47,106,74,0.18),transparent_66%)]" />
-        <p className="island-kicker mb-3">TanStack Start Base Template</p>
-        <h1 className="display-title mb-5 max-w-3xl text-4xl leading-[1.02] font-bold tracking-tight text-[var(--sea-ink)] sm:text-6xl">
-          Start simple, ship quickly.
-        </h1>
-        <p className="mb-8 max-w-2xl text-base text-[var(--sea-ink-soft)] sm:text-lg">
-          This base starter intentionally keeps things light: two routes, clean
-          structure, and the essentials you need to build from scratch.
-        </p>
-        <div className="flex flex-wrap gap-3">
-          <a
-            href="/about"
-            className="rounded-full border border-[rgba(50,143,151,0.3)] bg-[rgba(79,184,178,0.14)] px-5 py-2.5 text-sm font-semibold text-[var(--lagoon-deep)] no-underline transition hover:-translate-y-0.5 hover:bg-[rgba(79,184,178,0.24)]"
-          >
-            About This Starter
-          </a>
-          <a
-            href="https://tanstack.com/router"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="rounded-full border border-[rgba(23,58,64,0.2)] bg-white/50 px-5 py-2.5 text-sm font-semibold text-[var(--sea-ink)] no-underline transition hover:-translate-y-0.5 hover:border-[rgba(23,58,64,0.35)]"
-          >
-            Router Guide
-          </a>
+    <svg className={className} viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M12 36C12 34 14 32 16 32H48C50 32 52 34 52 36V46H12V36Z" fill="currentColor" opacity="0.2" />
+      <path d="M18 32L22 22C23 20 25 18 27 18H37C39 18 41 20 42 22L46 32" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+      <rect x="12" y="32" width="40" height="14" rx="3" stroke="currentColor" strokeWidth="2.5" />
+      <circle cx="20" cy="46" r="5" fill="currentColor" />
+      <circle cx="44" cy="46" r="5" fill="currentColor" />
+      <circle cx="20" cy="46" r="2" fill="white" />
+      <circle cx="44" cy="46" r="2" fill="white" />
+      <path d="M46 36H48" stroke="white" strokeWidth="2" strokeLinecap="round" opacity="0.5" />
+      <path d="M16 36H18" stroke="white" strokeWidth="2" strokeLinecap="round" opacity="0.5" />
+    </svg>
+  )
+}
+
+function BusIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect x="14" y="12" width="36" height="34" rx="4" fill="currentColor" opacity="0.15" />
+      <rect x="14" y="12" width="36" height="34" rx="4" stroke="currentColor" strokeWidth="2.5" />
+      <rect x="18" y="18" width="12" height="10" rx="2" fill="currentColor" opacity="0.25" />
+      <rect x="34" y="18" width="12" height="10" rx="2" fill="currentColor" opacity="0.25" />
+      <path d="M14 34H50" stroke="currentColor" strokeWidth="2" />
+      <circle cx="22" cy="46" r="4" fill="currentColor" />
+      <circle cx="42" cy="46" r="4" fill="currentColor" />
+      <rect x="26" y="38" width="12" height="4" rx="1" fill="currentColor" opacity="0.3" />
+    </svg>
+  )
+}
+
+function TrainIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M16 12C16 10 18 8 20 8H44C46 8 48 10 48 12V44H16V12Z" fill="currentColor" opacity="0.15" />
+      <path d="M16 44L12 52H52L48 44" stroke="currentColor" strokeWidth="2.5" strokeLinejoin="round" />
+      <rect x="16" y="8" width="32" height="36" rx="4" stroke="currentColor" strokeWidth="2.5" />
+      <rect x="20" y="14" width="24" height="14" rx="2" fill="currentColor" opacity="0.25" />
+      <circle cx="24" cy="36" r="3" fill="currentColor" />
+      <circle cx="40" cy="36" r="3" fill="currentColor" />
+      <path d="M28 36H36" stroke="currentColor" strokeWidth="2" strokeLinecap="round" opacity="0.4" />
+    </svg>
+  )
+}
+
+function BikeIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="18" cy="44" r="9" stroke="currentColor" strokeWidth="2.5" />
+      <circle cx="46" cy="44" r="9" stroke="currentColor" strokeWidth="2.5" />
+      <circle cx="18" cy="44" r="3" fill="currentColor" opacity="0.4" />
+      <circle cx="46" cy="44" r="3" fill="currentColor" opacity="0.4" />
+      <path d="M18 44L28 24L44 24L46 44" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M28 24L32 14H40" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function PlaneIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M32 10L36 28H54L40 38L44 54L32 44L20 54L24 38L10 28H28L32 10Z" fill="currentColor" opacity="0.15" />
+      <path d="M32 10L36 28H54L40 38L44 54L32 44L20 54L24 38L10 28H28L32 10Z" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M32 28V44" stroke="currentColor" strokeWidth="2" strokeLinecap="round" opacity="0.5" />
+    </svg>
+  )
+}
+
+function ScooterIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M20 48H44L48 20H40" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="20" cy="48" r="4" fill="currentColor" />
+      <circle cx="44" cy="48" r="4" fill="currentColor" />
+      <path d="M48 20L52 16" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+function RoadLines() {
+  return (
+    <div className="pointer-events-none absolute inset-0 overflow-hidden opacity-[0.04]">
+      {[...Array(6)].map((_, i) => (
+        <div
+          key={i}
+          className="absolute h-px bg-current"
+          style={{
+            top: `${15 + i * 14}%`,
+            left: '-10%',
+            right: '-10%',
+            transform: `rotate(${-2 + i * 0.8}deg)`,
+          }}
+        />
+      ))}
+    </div>
+  )
+}
+
+const floatingItems = [
+  { Icon: CarIcon, size: 'size-16', top: '8%', left: '5%', delay: '0s', duration: '20s', color: 'text-rose-500' },
+  { Icon: BusIcon, size: 'size-20', top: '15%', right: '8%', delay: '3s', duration: '25s', color: 'text-amber-500' },
+  { Icon: TrainIcon, size: 'size-14', top: '60%', left: '8%', delay: '5s', duration: '22s', color: 'text-blue-500' },
+  { Icon: BikeIcon, size: 'size-12', top: '70%', right: '12%', delay: '2s', duration: '18s', color: 'text-emerald-500' },
+  { Icon: PlaneIcon, size: 'size-16', top: '25%', left: '80%', delay: '7s', duration: '28s', color: 'text-sky-500' },
+  { Icon: ScooterIcon, size: 'size-10', top: '45%', left: '15%', delay: '4s', duration: '23s', color: 'text-indigo-500' },
+  { Icon: BusIcon, size: 'size-12', top: '80%', left: '70%', delay: '6s', duration: '19s', color: 'text-orange-500' },
+  { Icon: BikeIcon, size: 'size-14', top: '35%', right: '5%', delay: '1s', duration: '21s', color: 'text-green-500' },
+  { Icon: TrainIcon, size: 'size-10', top: '5%', left: '45%', delay: '8s', duration: '24s', color: 'text-purple-500' },
+  { Icon: CarIcon, size: 'size-12', top: '85%', left: '35%', delay: '9s', duration: '26s', color: 'text-red-500' },
+]
+
+function HomePage() {
+  const navigate = useNavigate()
+  const [hovered, setHovered] = useState<string | null>(null)
+
+  return (
+    <main className="relative flex min-h-[calc(100vh-8rem)] items-center justify-center overflow-hidden px-4">
+      {/* Dynamic background background lines */}
+      <div className="pointer-events-none absolute inset-0 opacity-10">
+        <div className="absolute left-1/4 top-0 h-full w-px bg-gradient-to-b from-transparent via-foreground to-transparent" />
+        <div className="absolute left-2/4 top-0 h-full w-px bg-gradient-to-b from-transparent via-foreground to-transparent" />
+        <div className="absolute left-3/4 top-0 h-full w-px bg-gradient-to-b from-transparent via-foreground to-transparent" />
+        <div className="absolute top-1/4 left-0 w-full h-px bg-gradient-to-r from-transparent via-foreground to-transparent" />
+        <div className="absolute top-2/4 left-0 w-full h-px bg-gradient-to-r from-transparent via-foreground to-transparent" />
+        <div className="absolute top-3/4 left-0 w-full h-px bg-gradient-to-r from-transparent via-foreground to-transparent" />
+      </div>
+
+      {/* Animated background gradient orbs */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute -left-32 -top-32 h-[32rem] w-[32rem] animate-pulse rounded-full bg-indigo-500/10 blur-[100px]" style={{ animationDuration: '8s' }} />
+        <div className="absolute -bottom-40 -right-32 h-[40rem] w-[40rem] animate-pulse rounded-full bg-violet-500/10 blur-[120px]" style={{ animationDuration: '10s', animationDelay: '2s' }} />
+        <div className="absolute left-1/2 top-1/2 h-[30rem] w-[30rem] -translate-x-1/2 -translate-y-1/2 animate-pulse rounded-full bg-blue-500/5 blur-[80px]" style={{ animationDuration: '12s', animationDelay: '4s' }} />
+      </div>
+
+      <RoadLines />
+
+      {/* Floating transportation icons */}
+      {floatingItems.map(({ Icon, size, delay, duration, color, ...pos }, i) => (
+        <div
+          key={i}
+          className={`pointer-events-none absolute ${color} opacity-20 dark:opacity-40 transition-opacity duration-1000`}
+          style={{
+            ...pos,
+            animation: `float-${i % 3} ${duration} ${delay} ease-in-out infinite`,
+          }}
+        >
+          <Icon className={size} />
         </div>
-      </section>
+      ))}
 
-      <section className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {[
-          [
-            'Type-Safe Routing',
-            'Routes and links stay in sync across every page.',
-          ],
-          [
-            'Server Functions',
-            'Call server code from your UI without creating API boilerplate.',
-          ],
-          [
-            'Streaming by Default',
-            'Ship progressively rendered responses for faster experiences.',
-          ],
-          [
-            'Tailwind Native',
-            'Design quickly with utility-first styling and reusable tokens.',
-          ],
-        ].map(([title, desc], index) => (
-          <article
-            key={title}
-            className="island-shell feature-card rise-in rounded-2xl p-5"
-            style={{ animationDelay: `${index * 90 + 80}ms` }}
+      {/* Center content */}
+      <div className="rise-in relative z-10 flex flex-col items-center gap-12 text-center max-w-4xl">
+        {/* Logo / Brand mark */}
+        <div className="group relative">
+          <div className="absolute -inset-12 animate-pulse rounded-full bg-gradient-to-tr from-indigo-500/20 via-violet-500/20 to-blue-500/20 blur-3xl" />
+          <div className="relative flex h-24 w-24 items-center justify-center rounded-3xl border border-white/20 bg-white/10 shadow-2xl backdrop-blur-xl transition-all duration-500 group-hover:scale-110 group-hover:rotate-3 dark:border-white/10 dark:bg-white/5">
+            <svg className="size-14 text-indigo-500 drop-shadow-glow transition-transform duration-500 group-hover:scale-110" viewBox="0 0 32 32" fill="none">
+              <path d="M4 24V10a2 2 0 012-2h20a2 2 0 012 2v14" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+              <path d="M8 12h16v8H8z" fill="currentColor" opacity="0.2" rx="2" />
+              <path d="M4 24h24" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+              <circle cx="10" cy="24" r="3" fill="currentColor" />
+              <circle cx="22" cy="24" r="3" fill="currentColor" />
+              <path d="M12 15h8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" opacity="0.6" />
+              <path d="M12 18h5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" opacity="0.4" />
+            </svg>
+          </div>
+        </div>
+
+        <div className="space-y-6">
+          <h1 className="text-6xl font-extrabold tracking-tight sm:text-8xl lg:text-9xl">
+            <span className="bg-gradient-to-br from-indigo-400 via-violet-500 to-blue-600 bg-clip-text text-transparent drop-shadow-sm">
+              Form-E
+            </span>
+          </h1>
+          <p className="mx-auto max-w-2xl text-xl font-medium text-muted-foreground/90 sm:text-2xl leading-relaxed">
+            The next generation of <span className="text-foreground">transportation mode choice</span> modelling. 
+            Build, deploy, and analyze surveys with unprecedented speed.
+          </p>
+        </div>
+
+        {/* Stats / trust signals */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 w-full max-w-2xl">
+          {[
+            { label: 'Optimized For', value: 'Tablets & iPads', icon: '📱' },
+            { label: 'Data Ready', value: 'Excel / CSV / JSON', icon: '📊' },
+            { label: 'Survey Flow', value: 'Dynamic & Smart', icon: '⚡' },
+          ].map(({ label, value, icon }) => (
+            <div key={label} className="flex flex-col items-center gap-2 p-6 rounded-2xl border border-white/10 bg-white/5 backdrop-blur-md shadow-lg transition-transform hover:-translate-y-1">
+              <span className="text-2xl">{icon}</span>
+              <div className="flex flex-col">
+                <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-indigo-500/70">{label}</span>
+                <span className="text-sm font-bold text-foreground/90">{value}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* CTA Buttons */}
+        <div className="flex flex-col gap-6 sm:flex-row items-center justify-center">
+          <Button
+            size="lg"
+            className="group relative h-16 cursor-pointer overflow-hidden rounded-2xl bg-indigo-600 px-12 text-lg font-bold text-white shadow-2xl shadow-indigo-500/20 transition-all hover:scale-105 active:scale-95"
+            onMouseEnter={() => setHovered('create')}
+            onMouseLeave={() => setHovered(null)}
+            onClick={() => navigate({ to: '/create' })}
           >
-            <h2 className="mb-2 text-base font-semibold text-[var(--sea-ink)]">
-              {title}
-            </h2>
-            <p className="m-0 text-sm text-[var(--sea-ink-soft)]">{desc}</p>
-          </article>
-        ))}
-      </section>
+            <div className="absolute inset-0 bg-gradient-to-r from-indigo-400 to-violet-500 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+            <span className="relative z-10 flex items-center gap-3">
+              Get Started
+              <svg
+                className={`size-6 transition-transform duration-300 ${hovered === 'create' ? 'translate-x-1' : ''}`}
+                fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+              </svg>
+            </span>
+          </Button>
 
-      <section className="island-shell mt-8 rounded-2xl p-6">
-        <p className="island-kicker mb-2">Quick Start</p>
-        <ul className="m-0 list-disc space-y-2 pl-5 text-sm text-[var(--sea-ink-soft)]">
-          <li>
-            Edit <code>src/routes/index.tsx</code> to customize the home page.
-          </li>
-          <li>
-            Update <code>src/components/Header.tsx</code> and{' '}
-            <code>src/components/Footer.tsx</code> for brand links.
-          </li>
-          <li>
-            Add routes in <code>src/routes</code> and tweak visual tokens in{' '}
-            <code>src/styles.css</code>.
-          </li>
-        </ul>
-      </section>
+          <Button
+            variant="ghost"
+            size="lg"
+            className="h-16 rounded-2xl px-12 text-lg font-semibold transition-all hover:bg-white/10 hover:backdrop-blur-xl border border-transparent hover:border-white/20"
+            onMouseEnter={() => setHovered('learn')}
+            onMouseLeave={() => setHovered(null)}
+          >
+            <span className="flex items-center gap-2">
+              Learn More
+              <svg
+                className={`size-5 transition-transform duration-300 ${hovered === 'learn' ? 'translate-y-1' : ''}`}
+                fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+              </svg>
+            </span>
+          </Button>
+        </div>
+      </div>
     </main>
   )
 }

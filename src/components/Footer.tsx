@@ -2,42 +2,62 @@ export default function Footer() {
   const year = new Date().getFullYear()
 
   return (
-    <footer className="mt-20 border-t border-[var(--line)] px-4 pb-14 pt-10 text-[var(--sea-ink-soft)]">
-      <div className="page-wrap flex flex-col items-center justify-between gap-4 text-center sm:flex-row sm:text-left">
-        <p className="m-0 text-sm">
-          &copy; {year} Your name here. All rights reserved.
-        </p>
-        <p className="island-kicker m-0">Built with TanStack Start</p>
+    <footer className="mt-32 border-t border-white/10 bg-background/50 py-16 px-4 backdrop-blur-sm">
+      <div className="page-wrap">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-12 mb-16">
+          <div className="col-span-1 md:col-span-2 space-y-6">
+            <div className="flex items-center gap-3">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-white shadow-lg shadow-indigo-500/20">
+                <svg className="size-5" viewBox="0 0 32 32" fill="none">
+                  <path d="M4 24V10a2 2 0 012-2h20a2 2 0 012 2v14" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+                  <path d="M4 24h24" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+                </svg>
+              </div>
+              <span className="text-xl font-bold tracking-tight">Form-E</span>
+            </div>
+            <p className="max-w-xs text-muted-foreground leading-relaxed">
+              Empowering transportation researchers with smart, dynamic survey tools. Built for the future of mode choice modelling.
+            </p>
+          </div>
+
+          <div className="space-y-6">
+            <h4 className="text-sm font-bold uppercase tracking-widest text-foreground">Platform</h4>
+            <ul className="space-y-4 text-sm font-medium text-muted-foreground">
+              <li><a href="#" className="hover:text-indigo-500 transition-colors">Survey Builder</a></li>
+              <li><a href="#" className="hover:text-indigo-500 transition-colors">Templates</a></li>
+              <li><a href="#" className="hover:text-indigo-500 transition-colors">Analytics</a></li>
+              <li><a href="#" className="hover:text-indigo-500 transition-colors">Export Tools</a></li>
+            </ul>
+          </div>
+
+          <div className="space-y-6">
+            <h4 className="text-sm font-bold uppercase tracking-widest text-foreground">Resources</h4>
+            <ul className="space-y-4 text-sm font-medium text-muted-foreground">
+              <li><a href="#" className="hover:text-indigo-500 transition-colors">Documentation</a></li>
+              <li><a href="#" className="hover:text-indigo-500 transition-colors">Help Center</a></li>
+              <li><a href="#" className="hover:text-indigo-500 transition-colors">API Reference</a></li>
+              <li><a href="#" className="hover:text-indigo-500 transition-colors">Privacy Policy</a></li>
+            </ul>
+          </div>
+        </div>
+
+        <div className="pt-8 border-t border-white/5 flex flex-col md:flex-row justify-between items-center gap-6">
+          <p className="text-sm text-muted-foreground/60 font-medium">
+            &copy; {year} Form-E. Accelerating transportation research.
+          </p>
+          <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/80">
+            <span className="h-2 w-2 rounded-full bg-indigo-500 animate-pulse" />
+            System Operational
+          </div>
+        </div>
       </div>
-      <div className="mt-4 flex justify-center gap-4">
-        <a
-          href="https://x.com/tan_stack"
-          target="_blank"
-          rel="noreferrer"
-          className="rounded-xl p-2 text-[var(--sea-ink-soft)] transition hover:bg-[var(--link-bg-hover)] hover:text-[var(--sea-ink)]"
-        >
-          <span className="sr-only">Follow TanStack on X</span>
-          <svg viewBox="0 0 16 16" aria-hidden="true" width="32" height="32">
-            <path
-              fill="currentColor"
-              d="M12.6 1h2.2L10 6.48 15.64 15h-4.41L7.78 9.82 3.23 15H1l5.14-5.84L.72 1h4.52l3.12 4.73L12.6 1zm-.77 12.67h1.22L4.57 2.26H3.26l8.57 11.41z"
-            />
-          </svg>
-        </a>
-        <a
-          href="https://github.com/TanStack"
-          target="_blank"
-          rel="noreferrer"
-          className="rounded-xl p-2 text-[var(--sea-ink-soft)] transition hover:bg-[var(--link-bg-hover)] hover:text-[var(--sea-ink)]"
-        >
-          <span className="sr-only">Go to TanStack GitHub</span>
-          <svg viewBox="0 0 16 16" aria-hidden="true" width="32" height="32">
-            <path
-              fill="currentColor"
-              d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.012 8.012 0 0 0 16 8c0-4.42-3.58-8-8-8z"
-            />
-          </svg>
-        </a>
+
+      {/* Transportation background element */}
+      <div className="pointer-events-none absolute bottom-0 left-0 w-full overflow-hidden opacity-[0.03]">
+        <svg className="w-full h-24" preserveAspectRatio="none" viewBox="0 0 1200 120" fill="none">
+          <path d="M0 100 Q 300 80 600 100 T 1200 100" stroke="currentColor" strokeWidth="4" />
+          <path d="M0 110 Q 300 90 600 110 T 1200 110" stroke="currentColor" strokeWidth="2" strokeDasharray="10 10" />
+        </svg>
       </div>
     </footer>
   )
