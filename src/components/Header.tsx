@@ -1,5 +1,6 @@
 import { Link } from '@tanstack/react-router'
 import ThemeToggle from './ThemeToggle'
+import { AuthNav } from './auth/AuthNav'
 
 export default function Header() {
   return (
@@ -38,18 +39,20 @@ export default function Header() {
             >
               About
             </Link>
-            <a
-              href="#"
-              className="text-muted-foreground transition-colors hover:text-foreground"
+            <Link
+              to="/surveys"
+              className="text-muted-foreground transition-colors hover:text-foreground active:text-indigo-500"
+              activeProps={{ className: 'text-indigo-500' }}
             >
               Surveys
-            </a>
-            <a
-              href="#"
-              className="text-muted-foreground transition-colors hover:text-foreground"
+            </Link>
+            <Link
+              to="/dashboard"
+              className="text-muted-foreground transition-colors hover:text-foreground active:text-indigo-500"
+              activeProps={{ className: 'text-indigo-500' }}
             >
-              Exports
-            </a>
+              Dashboard
+            </Link>
           </div>
         </div>
 
@@ -70,9 +73,7 @@ export default function Header() {
             </a>
           </div>
           <ThemeToggle />
-          <button className="hidden sm:flex h-10 items-center justify-center rounded-xl bg-foreground px-5 text-sm font-bold text-background transition-transform active:scale-95 hover:opacity-90">
-            Sign In
-          </button>
+          <AuthNav />
         </div>
       </nav>
     </header>

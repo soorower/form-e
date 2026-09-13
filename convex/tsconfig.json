@@ -1,6 +1,10 @@
 {
   "compilerOptions": {
     "allowJs": true,
+    // Without this the Convex CLI's typecheck writes a .js twin next to every
+    // file in this directory, and Convex then sees two modules with one name.
+    "noEmit": true,
+    "skipLibCheck": true,
     "strict": true,
     "moduleResolution": "Bundler",
     "jsx": "react-jsx",

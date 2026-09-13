@@ -3,10 +3,9 @@ import {
   Scripts,
   createRootRouteWithContext,
 } from '@tanstack/react-router'
-import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
-import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
-import { TanStackDevtools } from '@tanstack/react-devtools'
 import type { QueryClient } from '@tanstack/react-query'
+import { ConvexAuthProvider } from '@convex-dev/auth/react'
+import { convex } from '../lib/convex/client'
 import Footer from '../components/Footer'
 import Header from '../components/Header'
 
@@ -46,24 +45,11 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         <HeadContent />
       </head>
       <body className="font-sans antialiased [overflow-wrap:anywhere] selection:bg-[rgba(79,184,178,0.24)]">
-        <Header />
-        {children}
-        <Footer />
-        <TanStackDevtools
-          config={{
-            position: 'bottom-right',
-          }}
-          plugins={[
-            {
-              name: 'TanStack Router',
-              render: <TanStackRouterDevtoolsPanel />,
-            },
-            {
-              name: 'TanStack Query',
-              render: <ReactQueryDevtools buttonPosition="bottom-left" />,
-            },
-          ]}
-        />
+        <ConvexAuthProvider client={convex}>
+          <Header />
+          {children}
+          <Footer />
+        </ConvexAuthProvider>
         <Scripts />
       </body>
     </html>
