@@ -1,8 +1,10 @@
-import { isChoiceExperimentAnswer, isTableAnswer } from './answers'
+import { OTHER_ANSWER, isChoiceExperimentAnswer, isTableAnswer, scenarioChoice } from './answers'
 import { columnKey } from './cards'
 import { pickText, questionNumbers } from './factory'
 import type {
   AnswerValue,
+  ChoiceExperimentQuestion,
+  ChoicePrompt,
   Lang,
   Question,
   Questionnaire,
@@ -28,18 +30,51 @@ function plainAnswer(question: Question, value: AnswerValue | undefined, lang: L
   return ''
 }
 
-/**
- * Flattens responses into analysis-ready rows. Plain questions become one
- * column each; table questions become one column per row × column; a choice
- * experiment produces one output row per scenario shown, carrying the set
- * number, every attribute level, and the chosen alternative. Responses with
- * no choice scenarios produce a single row.
- */
 /** English when the survey has it, since analysis scripts usually expect English headings. */
 export function defaultExportLanguage(questionnaire: Questionnaire): Lang {
   return questionnaire.languages.includes('en') ? 'en' : questionnaire.defaultLanguage
 }
 
+/** "Choice" for the first prompt under a scenario, "Choice 2", "Choice 3", … for the rest. */
+export function choiceColumn(promptIndex: number): string {
+  return promptIndex === 0 ? 'Choice' : `Choice ${promptIndex + 1}`
+}
+
+/** The choice columns a block writes, in order: one per prompt, plus the "Other" text where allowed. */
+export function choiceColumns(question: Pick<ChoiceExperimentQuestion, 'prompts'>): string[] {
+  const prompts = question.prompts.length > 0 ? question.prompts : [null]
+  return prompts.flatMap((prompt, index) => {
+    const column = choiceColumn(index)
+    return prompt?.allowOther ? [column, `${column} (other)`] : [column]
+  })
+}
+
+/**
+ * What goes in a choice column. A prompt answered with the table's columns
+ * records the column picked by its key (A/B, or Bus/Train); a prompt with
+ * its own options (always the case in the profile layout, whose table has
+ * one column) records the answer by its English label ("Yes"), so the
+ * export reads without a code book.
+ */
+function choiceText(
+  question: Pick<ChoiceExperimentQuestion, 'layout'>,
+  prompt: ChoicePrompt | undefined,
+  chosen: string,
+): string {
+  if (chosen === '' || !prompt) return chosen
+  if (prompt.answer === 'alternative' && question.layout !== 'profile') return chosen
+  if (chosen === OTHER_ANSWER) return 'Other'
+  const option = prompt.options.find((candidate) => candidate.key === chosen)
+  return option ? option.label.en || option.key : chosen
+}
+
+/**
+ * Flattens responses into analysis-ready rows. Plain questions become one
+ * column each; table questions become one column per row × column; a choice
+ * experiment produces one output row per scenario shown, carrying the set
+ * number, every attribute level, and the answer to each prompt. Responses
+ * with no choice scenarios produce a single row.
+ */
 export function responsesToRows(
   questionnaire: Questionnaire,
   responses: SurveyResponse[],
@@ -79,10 +114,12 @@ export function responsesToRows(
 
       if (question.type === 'choice_experiment') {
         const answer = isChoiceExperimentAnswer(value) ? value : { scenarios: [] }
+        const perScenario = Math.max(1, question.prompts.length)
         answer.scenarios.forEach((scenario, scenarioIndex) => {
           const row: ExportRow = {
             Block: pickText(question.label, lang),
-            Question: numbers[index] + scenarioIndex,
+            // The number of the first question under this scenario's table.
+            Question: numbers[index] + scenarioIndex * perScenario,
             Scenario: scenarioIndex + 1,
             Set: scenario.set,
           }
@@ -92,13 +129,17 @@ export function responsesToRows(
               row[key] = scenario.levels[key] ?? ''
             }
           }
-          // Alternatives layout records the column picked (A/B); the profile
-          // layout records the answer given, by its English label ("Yes").
-          const option =
-            question.layout === 'profile'
-              ? question.choiceOptions.find((candidate) => candidate.key === scenario.choice)
-              : undefined
-          row.Choice = option ? option.label.en || option.key : scenario.choice
+          if (question.prompts.length === 0) {
+            row.Choice = scenario.choice
+          }
+          question.prompts.forEach((prompt, promptIndex) => {
+            const column = choiceColumn(promptIndex)
+            const chosen = scenarioChoice(scenario, prompt, promptIndex)
+            row[column] = choiceText(question, prompt, chosen)
+            if (prompt.allowOther) {
+              row[`${column} (other)`] = chosen === OTHER_ANSWER ? (scenario.other?.[prompt.key] ?? '') : ''
+            }
+          })
           scenarioRows.push(row)
         })
         return
@@ -121,6 +162,7 @@ export function responsesToRows(
 export function exportColumns(questionnaire: Questionnaire, rows: ExportRow[]): string[] {
   const columns: string[] = []
   const trailing: string[] = ['Block', 'Question', 'Scenario', 'Set']
+  const choices: string[] = ['Choice']
   for (const question of questionnaire.questions) {
     if (question.type !== 'choice_experiment') continue
     for (const alternative of question.alternatives) {
@@ -129,8 +171,11 @@ export function exportColumns(questionnaire: Questionnaire, rows: ExportRow[]): 
         if (!trailing.includes(key)) trailing.push(key)
       }
     }
+    for (const column of choiceColumns(question)) {
+      if (!choices.includes(column)) choices.push(column)
+    }
   }
-  trailing.push('Choice')
+  trailing.push(...choices)
   for (const row of rows) {
     for (const key of Object.keys(row)) {
       if (!columns.includes(key) && !trailing.includes(key)) columns.push(key)

@@ -102,6 +102,14 @@ export interface ChoiceAlternative {
 export interface ChoiceAttribute {
   key: string
   label: LocalizedText
+  /**
+   * Optional section heading shown on its own row above this attribute.
+   * Consecutive attributes with the same heading share one row, so "Home to
+   * Sylhet station" can sit above access time and access cost, and "Sylhet
+   * station to Dhaka station" above the in-vehicle rows. Rows are shown in
+   * the order of `attributes`, which the editor can rearrange.
+   */
+  group?: LocalizedText
 }
 
 /**
@@ -111,7 +119,7 @@ export interface ChoiceAttribute {
  * - 'profile': each card describes ONE option with plain columns
  *   (`Distance, Location, Parking…`); it is shown beside fixed comparison
  *   columns (for example "your current shopping destination") and the
- *   respondent answers the prompt with `choiceOptions`, such as Yes / No.
+ *   respondent answers each prompt with its options, such as Yes / No.
  */
 export type ChoiceLayout = 'alternatives' | 'profile'
 
@@ -124,10 +132,33 @@ export interface ChoiceReferenceColumn {
   text: LocalizedText
 }
 
-/** An answer to the prompt in the profile layout, e.g. Yes / No. */
+/** One answer button under a scenario, e.g. Yes / No or a mode of transport. */
 export interface ChoiceOption {
   key: string
   label: LocalizedText
+}
+
+/**
+ * How a question under a scenario is answered: 'alternative' offers the
+ * table's columns (Bus / Train / Air) and records the column key;
+ * 'options' offers the prompt's own list and records the option key.
+ */
+export type ChoicePromptAnswer = 'alternative' | 'options'
+
+/**
+ * One question asked under every scenario table. A block may ask several:
+ * the same mode choice under three departure-time conditions, or the main
+ * mode followed by the access and egress modes. The profile layout, whose
+ * table has a single card column, always answers with `options`.
+ */
+export interface ChoicePrompt {
+  key: string
+  text: LocalizedText
+  answer: ChoicePromptAnswer
+  /** Used when `answer` is 'options'. */
+  options: ChoiceOption[]
+  /** Adds an "Other" answer with a free-text field. */
+  allowOther: boolean
 }
 
 /**
@@ -147,7 +178,7 @@ export interface ChoiceCard {
 /**
  * A block of choice scenarios. Each respondent is shown
  * `scenariosPerRespondent` cards drawn at random from `cards`, one table per
- * card, and picks one alternative per table.
+ * card, and answers every prompt under each table.
  */
 export interface ChoiceExperimentQuestion extends QuestionBase {
   type: 'choice_experiment'
@@ -158,8 +189,6 @@ export interface ChoiceExperimentQuestion extends QuestionBase {
   attributes: ChoiceAttribute[]
   /** Profile layout only. */
   referenceColumns: ChoiceReferenceColumn[]
-  /** Profile layout only; the answer buttons under each scenario. */
-  choiceOptions: ChoiceOption[]
   drawMode: CardDrawMode
   cards: ChoiceCard[]
   /**
@@ -169,8 +198,13 @@ export interface ChoiceExperimentQuestion extends QuestionBase {
    */
   levelLabels: Record<string, LocalizedText>
   scenariosPerRespondent: number
-  /** The question asked under every scenario table. */
-  prompt: LocalizedText
+  /**
+   * The questions asked under every scenario table, in order. Each takes one
+   * question number per scenario. A single 'alternative' prompt in the
+   * alternatives layout is answered inside the table; anything else is
+   * answered below it.
+   */
+  prompts: ChoicePrompt[]
 }
 
 export type Question =
@@ -204,6 +238,15 @@ export interface Questionnaire {
    * field is offered instead.
    */
   enumerators: string[]
+  /** The user who created the survey (a Convex users id), set by the server. */
+  ownerId?: string
+  /**
+   * The group whose members may also edit this survey and see its responses.
+   * Set by the server when the survey is created and changed by the admin;
+   * absent on surveys saved before groups existed, which only the owner and
+   * admins can see.
+   */
+  groupId?: string
   createdAt: number
   updatedAt: number
 }
@@ -225,8 +268,16 @@ export interface ChoiceScenarioAnswer {
   set: number
   /** Snapshot of the card's levels at the time it was shown. */
   levels: Record<string, string>
-  /** Key of the chosen alternative, or '' while unanswered. */
+  /**
+   * Answer to the block's first prompt (an alternative or option key), or ''
+   * while unanswered. Responses recorded before blocks could ask several
+   * questions have only this field, so it is kept in step with `choices`.
+   */
   choice: string
+  /** Answer to every prompt, by prompt key. Absent on older responses. */
+  choices?: Record<string, string>
+  /** Free text typed for an "Other" answer, by prompt key. */
+  other?: Record<string, string>
 }
 
 export interface ChoiceExperimentAnswer {
@@ -244,7 +295,20 @@ export interface SurveyResponse {
   surveyNumber: string
   /** Name of the team member who collected the response. */
   enumerator: string
+  /** Set by the server when a signed-in account submitted: their users id and surveyor code. */
+  surveyorId?: string
+  surveyorCode?: string
   language: Lang
   answers: Record<string, AnswerValue>
+  submittedAt: number
+}
+
+/** What the team sees of a response: who collected it and when, never the answers. */
+export interface ResponseProgress {
+  id: string
+  questionnaireId: string
+  serial: number
+  enumerator: string
+  surveyorCode: string | null
   submittedAt: number
 }

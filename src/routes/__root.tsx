@@ -1,11 +1,14 @@
 import {
   HeadContent,
+  Outlet,
   Scripts,
   createRootRouteWithContext,
+  useLocation,
 } from '@tanstack/react-router'
 import type { QueryClient } from '@tanstack/react-query'
 import { ConvexAuthProvider } from '@convex-dev/auth/react'
 import { convex } from '../lib/convex/client'
+import { isAdminPath } from '../lib/auth/areas'
 import Footer from '../components/Footer'
 import Header from '../components/Header'
 
@@ -24,7 +27,8 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         content: 'width=device-width, initial-scale=1',
       },
       {
-        title: 'TanStack Start Starter',
+        // Fallback for routes without their own title (editor, fill page, …).
+        title: 'Form-E',
       },
     ],
     links: [
@@ -35,7 +39,21 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     ],
   }),
   shellComponent: RootDocument,
+  component: RootLayout,
 })
+
+/** The app's chrome. The admin area brings its own header (routes/admin.tsx). */
+function RootLayout() {
+  const adminArea = useLocation({ select: (location) => isAdminPath(location.pathname) })
+  if (adminArea) return <Outlet />
+  return (
+    <>
+      <Header />
+      <Outlet />
+      <Footer />
+    </>
+  )
+}
 
 function RootDocument({ children }: { children: React.ReactNode }) {
   return (
@@ -45,10 +63,18 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         <HeadContent />
       </head>
       <body className="font-sans antialiased [overflow-wrap:anywhere] selection:bg-[rgba(79,184,178,0.24)]">
-        <ConvexAuthProvider client={convex}>
-          <Header />
+        {/*
+          The app's session. Admin routes nest a second provider with its own
+          client and storage namespace, so an OAuth code arriving on an
+          /admin URL is left for that one to exchange.
+        */}
+        <ConvexAuthProvider
+          client={convex}
+          shouldHandleCode={() =>
+            typeof window !== 'undefined' && !isAdminPath(window.location.pathname)
+          }
+        >
           {children}
-          <Footer />
         </ConvexAuthProvider>
         <Scripts />
       </body>

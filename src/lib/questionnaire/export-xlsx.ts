@@ -1,8 +1,8 @@
 import type * as ExcelJSTypes from 'exceljs'
 import { columnKey } from './cards'
 import type { ExportRow } from './export'
-import { pickText, questionNumbers, questionTypeLabel } from './factory'
-import type { Lang, Questionnaire } from './types'
+import { blockQuestionCount, pickText, questionNumbers, questionTypeLabel } from './factory'
+import type { ChoiceExperimentQuestion, Lang, Questionnaire } from './types'
 
 type ExcelJSModule = typeof ExcelJSTypes
 
@@ -91,7 +91,7 @@ export async function buildResponsesWorkbook(
       const index = questionnaire.questions.indexOf(block)
       const title = cards.addRow([
         `${pickText(block.label, lang) || `Block ${blockIndex + 1}`} (questions ${numbers[index]}–${
-          numbers[index] + block.scenariosPerRespondent - 1
+          numbers[index] + blockQuestionCount(block) - 1
         }, ${block.scenariosPerRespondent} of ${block.cards.length} cards per respondent)`,
       ])
       title.font = { bold: true, size: 12 }
@@ -128,7 +128,7 @@ export async function buildResponsesWorkbook(
     }
     const number =
       question.type === 'choice_experiment'
-        ? `${numbers[index]}–${numbers[index] + question.scenariosPerRespondent - 1}`
+        ? `${numbers[index]}–${numbers[index] + blockQuestionCount(question) - 1}`
         : String(numbers[index])
     questions.addRow([
       number,
@@ -143,10 +143,21 @@ export async function buildResponsesWorkbook(
   return workbook.xlsx.writeBuffer() as Promise<ArrayBuffer>
 }
 
-function blockSummary(question: Extract<Questionnaire['questions'][number], { type: 'choice_experiment' }>) {
+function blockSummary(question: ChoiceExperimentQuestion) {
   const alternatives = question.alternatives.map((a) => `${a.key}=${a.label.en || a.key}`).join(', ')
   const attributes = question.attributes.map((a) => a.key).join(', ')
-  return `${question.cards.length} cards, ${question.scenariosPerRespondent} per respondent | Alternatives: ${alternatives} | Attributes: ${attributes}`
+  // "Choice", "Choice 2", … name the export columns each prompt fills.
+  const prompts = question.prompts
+    .map((prompt, index) => {
+      const column = index === 0 ? 'Choice' : `Choice ${index + 1}`
+      const answers =
+        prompt.answer === 'alternative'
+          ? 'one of the alternatives'
+          : [...prompt.options.map((option) => option.label.en || option.key), ...(prompt.allowOther ? ['Other'] : [])].join(' / ')
+      return `${column}: ${prompt.text.en || prompt.text.bn} (${answers})`
+    })
+    .join(' | ')
+  return `${question.cards.length} cards, ${question.scenariosPerRespondent} per respondent | Alternatives: ${alternatives} | Attributes: ${attributes} | ${prompts}`
 }
 
 export const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'

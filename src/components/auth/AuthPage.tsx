@@ -1,19 +1,24 @@
 import { useEffect } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useViewer } from '#/hooks/useViewer'
+import { AUTH_AREAS, type AuthArea } from '#/lib/auth/areas'
 import { safeRedirect, type AuthMode } from '#/lib/auth/errors'
 import { AuthForm } from './AuthForm'
 
 interface AuthPageProps {
   mode: AuthMode
+  area?: AuthArea
   redirect?: string
 }
 
-/** Shared layout for /login and /signup. Someone already signed in is sent on. */
-export function AuthPage({ mode, redirect }: AuthPageProps) {
+/**
+ * Shared layout for the sign-in and sign-up pages of both areas. Someone
+ * already signed in to this area is sent on.
+ */
+export function AuthPage({ mode, area = 'app', redirect }: AuthPageProps) {
   const { loading, isAuthenticated } = useViewer()
   const navigate = useNavigate()
-  const target = safeRedirect(redirect)
+  const target = safeRedirect(redirect, AUTH_AREAS[area].home)
 
   useEffect(() => {
     if (!loading && isAuthenticated) void navigate({ href: target, replace: true })
@@ -31,9 +36,11 @@ export function AuthPage({ mode, redirect }: AuthPageProps) {
               <circle cx="22" cy="24" r="2.5" fill="currentColor" />
             </svg>
           </div>
-          <p className="text-xs font-bold uppercase tracking-[0.2em] text-primary">Form-E</p>
+          <p className="text-xs font-bold uppercase tracking-[0.2em] text-primary">
+            Form-E{area === 'admin' && ' · Admin'}
+          </p>
         </div>
-        <AuthForm mode={mode} redirect={redirect} />
+        <AuthForm mode={mode} area={area} redirect={redirect} />
       </div>
     </main>
   )

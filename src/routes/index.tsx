@@ -2,7 +2,10 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
 import { Button } from '#/components/ui/button'
 
-export const Route = createFileRoute('/')({ component: HomePage })
+export const Route = createFileRoute('/')({
+  head: () => ({ meta: [{ title: 'Form-E · Transportation survey builder' }] }),
+  component: HomePage,
+})
 
 function CarIcon({ className }: { className?: string }) {
   return (

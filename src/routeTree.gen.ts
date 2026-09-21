@@ -13,11 +13,22 @@ import { Route as SignupRouteImport } from './routes/signup'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as CreateRouteImport } from './routes/create'
+import { Route as AdminRouteImport } from './routes/admin'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SurveysIndexRouteImport } from './routes/surveys/index'
+import { Route as AdminIndexRouteImport } from './routes/admin/index'
+import { Route as AdminSignupRouteImport } from './routes/admin/signup'
+import { Route as AdminLoginRouteImport } from './routes/admin/login'
+import { Route as AdminDashboardRouteImport } from './routes/admin/dashboard'
+import { Route as AdminCreateRouteImport } from './routes/admin/create'
 import { Route as SurveysSurveyIdIndexRouteImport } from './routes/surveys/$surveyId.index'
+import { Route as AdminSurveysIndexRouteImport } from './routes/admin/surveys/index'
 import { Route as SurveysSurveyIdFillRouteImport } from './routes/surveys/$surveyId.fill'
+import { Route as SurveysSurveyIdChatRouteImport } from './routes/surveys/$surveyId.chat'
+import { Route as AdminSurveysSurveyIdIndexRouteImport } from './routes/admin/surveys/$surveyId.index'
+import { Route as AdminSurveysSurveyIdFillRouteImport } from './routes/admin/surveys/$surveyId.fill'
+import { Route as AdminSurveysSurveyIdChatRouteImport } from './routes/admin/surveys/$surveyId.chat'
 
 const SignupRoute = SignupRouteImport.update({
   id: '/signup',
@@ -39,6 +50,11 @@ const CreateRoute = CreateRouteImport.update({
   path: '/create',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminRoute = AdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AboutRoute = AboutRouteImport.update({
   id: '/about',
   path: '/about',
@@ -54,27 +70,91 @@ const SurveysIndexRoute = SurveysIndexRouteImport.update({
   path: '/surveys/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminIndexRoute = AdminIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminSignupRoute = AdminSignupRouteImport.update({
+  id: '/signup',
+  path: '/signup',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminLoginRoute = AdminLoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminDashboardRoute = AdminDashboardRouteImport.update({
+  id: '/dashboard',
+  path: '/dashboard',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminCreateRoute = AdminCreateRouteImport.update({
+  id: '/create',
+  path: '/create',
+  getParentRoute: () => AdminRoute,
+} as any)
 const SurveysSurveyIdIndexRoute = SurveysSurveyIdIndexRouteImport.update({
   id: '/surveys/$surveyId/',
   path: '/surveys/$surveyId/',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AdminSurveysIndexRoute = AdminSurveysIndexRouteImport.update({
+  id: '/surveys/',
+  path: '/surveys/',
+  getParentRoute: () => AdminRoute,
 } as any)
 const SurveysSurveyIdFillRoute = SurveysSurveyIdFillRouteImport.update({
   id: '/surveys/$surveyId/fill',
   path: '/surveys/$surveyId/fill',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SurveysSurveyIdChatRoute = SurveysSurveyIdChatRouteImport.update({
+  id: '/surveys/$surveyId/chat',
+  path: '/surveys/$surveyId/chat',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminSurveysSurveyIdIndexRoute =
+  AdminSurveysSurveyIdIndexRouteImport.update({
+    id: '/surveys/$surveyId/',
+    path: '/surveys/$surveyId/',
+    getParentRoute: () => AdminRoute,
+  } as any)
+const AdminSurveysSurveyIdFillRoute =
+  AdminSurveysSurveyIdFillRouteImport.update({
+    id: '/surveys/$surveyId/fill',
+    path: '/surveys/$surveyId/fill',
+    getParentRoute: () => AdminRoute,
+  } as any)
+const AdminSurveysSurveyIdChatRoute =
+  AdminSurveysSurveyIdChatRouteImport.update({
+    id: '/surveys/$surveyId/chat',
+    path: '/surveys/$surveyId/chat',
+    getParentRoute: () => AdminRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/admin': typeof AdminRouteWithChildren
   '/create': typeof CreateRoute
   '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
   '/signup': typeof SignupRoute
+  '/admin/create': typeof AdminCreateRoute
+  '/admin/dashboard': typeof AdminDashboardRoute
+  '/admin/login': typeof AdminLoginRoute
+  '/admin/signup': typeof AdminSignupRoute
+  '/admin/': typeof AdminIndexRoute
   '/surveys/': typeof SurveysIndexRoute
+  '/surveys/$surveyId/chat': typeof SurveysSurveyIdChatRoute
   '/surveys/$surveyId/fill': typeof SurveysSurveyIdFillRoute
+  '/admin/surveys/': typeof AdminSurveysIndexRoute
   '/surveys/$surveyId/': typeof SurveysSurveyIdIndexRoute
+  '/admin/surveys/$surveyId/chat': typeof AdminSurveysSurveyIdChatRoute
+  '/admin/surveys/$surveyId/fill': typeof AdminSurveysSurveyIdFillRoute
+  '/admin/surveys/$surveyId/': typeof AdminSurveysSurveyIdIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -83,34 +163,66 @@ export interface FileRoutesByTo {
   '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
   '/signup': typeof SignupRoute
+  '/admin/create': typeof AdminCreateRoute
+  '/admin/dashboard': typeof AdminDashboardRoute
+  '/admin/login': typeof AdminLoginRoute
+  '/admin/signup': typeof AdminSignupRoute
+  '/admin': typeof AdminIndexRoute
   '/surveys': typeof SurveysIndexRoute
+  '/surveys/$surveyId/chat': typeof SurveysSurveyIdChatRoute
   '/surveys/$surveyId/fill': typeof SurveysSurveyIdFillRoute
+  '/admin/surveys': typeof AdminSurveysIndexRoute
   '/surveys/$surveyId': typeof SurveysSurveyIdIndexRoute
+  '/admin/surveys/$surveyId/chat': typeof AdminSurveysSurveyIdChatRoute
+  '/admin/surveys/$surveyId/fill': typeof AdminSurveysSurveyIdFillRoute
+  '/admin/surveys/$surveyId': typeof AdminSurveysSurveyIdIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/admin': typeof AdminRouteWithChildren
   '/create': typeof CreateRoute
   '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
   '/signup': typeof SignupRoute
+  '/admin/create': typeof AdminCreateRoute
+  '/admin/dashboard': typeof AdminDashboardRoute
+  '/admin/login': typeof AdminLoginRoute
+  '/admin/signup': typeof AdminSignupRoute
+  '/admin/': typeof AdminIndexRoute
   '/surveys/': typeof SurveysIndexRoute
+  '/surveys/$surveyId/chat': typeof SurveysSurveyIdChatRoute
   '/surveys/$surveyId/fill': typeof SurveysSurveyIdFillRoute
+  '/admin/surveys/': typeof AdminSurveysIndexRoute
   '/surveys/$surveyId/': typeof SurveysSurveyIdIndexRoute
+  '/admin/surveys/$surveyId/chat': typeof AdminSurveysSurveyIdChatRoute
+  '/admin/surveys/$surveyId/fill': typeof AdminSurveysSurveyIdFillRoute
+  '/admin/surveys/$surveyId/': typeof AdminSurveysSurveyIdIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
     | '/about'
+    | '/admin'
     | '/create'
     | '/dashboard'
     | '/login'
     | '/signup'
+    | '/admin/create'
+    | '/admin/dashboard'
+    | '/admin/login'
+    | '/admin/signup'
+    | '/admin/'
     | '/surveys/'
+    | '/surveys/$surveyId/chat'
     | '/surveys/$surveyId/fill'
+    | '/admin/surveys/'
     | '/surveys/$surveyId/'
+    | '/admin/surveys/$surveyId/chat'
+    | '/admin/surveys/$surveyId/fill'
+    | '/admin/surveys/$surveyId/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -119,30 +231,53 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/login'
     | '/signup'
+    | '/admin/create'
+    | '/admin/dashboard'
+    | '/admin/login'
+    | '/admin/signup'
+    | '/admin'
     | '/surveys'
+    | '/surveys/$surveyId/chat'
     | '/surveys/$surveyId/fill'
+    | '/admin/surveys'
     | '/surveys/$surveyId'
+    | '/admin/surveys/$surveyId/chat'
+    | '/admin/surveys/$surveyId/fill'
+    | '/admin/surveys/$surveyId'
   id:
     | '__root__'
     | '/'
     | '/about'
+    | '/admin'
     | '/create'
     | '/dashboard'
     | '/login'
     | '/signup'
+    | '/admin/create'
+    | '/admin/dashboard'
+    | '/admin/login'
+    | '/admin/signup'
+    | '/admin/'
     | '/surveys/'
+    | '/surveys/$surveyId/chat'
     | '/surveys/$surveyId/fill'
+    | '/admin/surveys/'
     | '/surveys/$surveyId/'
+    | '/admin/surveys/$surveyId/chat'
+    | '/admin/surveys/$surveyId/fill'
+    | '/admin/surveys/$surveyId/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
+  AdminRoute: typeof AdminRouteWithChildren
   CreateRoute: typeof CreateRoute
   DashboardRoute: typeof DashboardRoute
   LoginRoute: typeof LoginRoute
   SignupRoute: typeof SignupRoute
   SurveysIndexRoute: typeof SurveysIndexRoute
+  SurveysSurveyIdChatRoute: typeof SurveysSurveyIdChatRoute
   SurveysSurveyIdFillRoute: typeof SurveysSurveyIdFillRoute
   SurveysSurveyIdIndexRoute: typeof SurveysSurveyIdIndexRoute
 }
@@ -177,6 +312,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CreateRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin': {
+      id: '/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AdminRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/about': {
       id: '/about'
       path: '/about'
@@ -198,12 +340,54 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SurveysIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/': {
+      id: '/admin/'
+      path: '/'
+      fullPath: '/admin/'
+      preLoaderRoute: typeof AdminIndexRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/signup': {
+      id: '/admin/signup'
+      path: '/signup'
+      fullPath: '/admin/signup'
+      preLoaderRoute: typeof AdminSignupRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/login': {
+      id: '/admin/login'
+      path: '/login'
+      fullPath: '/admin/login'
+      preLoaderRoute: typeof AdminLoginRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/dashboard': {
+      id: '/admin/dashboard'
+      path: '/dashboard'
+      fullPath: '/admin/dashboard'
+      preLoaderRoute: typeof AdminDashboardRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/create': {
+      id: '/admin/create'
+      path: '/create'
+      fullPath: '/admin/create'
+      preLoaderRoute: typeof AdminCreateRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/surveys/$surveyId/': {
       id: '/surveys/$surveyId/'
       path: '/surveys/$surveyId'
       fullPath: '/surveys/$surveyId/'
       preLoaderRoute: typeof SurveysSurveyIdIndexRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/admin/surveys/': {
+      id: '/admin/surveys/'
+      path: '/surveys'
+      fullPath: '/admin/surveys/'
+      preLoaderRoute: typeof AdminSurveysIndexRouteImport
+      parentRoute: typeof AdminRoute
     }
     '/surveys/$surveyId/fill': {
       id: '/surveys/$surveyId/fill'
@@ -212,17 +396,73 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SurveysSurveyIdFillRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/surveys/$surveyId/chat': {
+      id: '/surveys/$surveyId/chat'
+      path: '/surveys/$surveyId/chat'
+      fullPath: '/surveys/$surveyId/chat'
+      preLoaderRoute: typeof SurveysSurveyIdChatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/surveys/$surveyId/': {
+      id: '/admin/surveys/$surveyId/'
+      path: '/surveys/$surveyId'
+      fullPath: '/admin/surveys/$surveyId/'
+      preLoaderRoute: typeof AdminSurveysSurveyIdIndexRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/surveys/$surveyId/fill': {
+      id: '/admin/surveys/$surveyId/fill'
+      path: '/surveys/$surveyId/fill'
+      fullPath: '/admin/surveys/$surveyId/fill'
+      preLoaderRoute: typeof AdminSurveysSurveyIdFillRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/surveys/$surveyId/chat': {
+      id: '/admin/surveys/$surveyId/chat'
+      path: '/surveys/$surveyId/chat'
+      fullPath: '/admin/surveys/$surveyId/chat'
+      preLoaderRoute: typeof AdminSurveysSurveyIdChatRouteImport
+      parentRoute: typeof AdminRoute
+    }
   }
 }
+
+interface AdminRouteChildren {
+  AdminCreateRoute: typeof AdminCreateRoute
+  AdminDashboardRoute: typeof AdminDashboardRoute
+  AdminLoginRoute: typeof AdminLoginRoute
+  AdminSignupRoute: typeof AdminSignupRoute
+  AdminIndexRoute: typeof AdminIndexRoute
+  AdminSurveysIndexRoute: typeof AdminSurveysIndexRoute
+  AdminSurveysSurveyIdChatRoute: typeof AdminSurveysSurveyIdChatRoute
+  AdminSurveysSurveyIdFillRoute: typeof AdminSurveysSurveyIdFillRoute
+  AdminSurveysSurveyIdIndexRoute: typeof AdminSurveysSurveyIdIndexRoute
+}
+
+const AdminRouteChildren: AdminRouteChildren = {
+  AdminCreateRoute: AdminCreateRoute,
+  AdminDashboardRoute: AdminDashboardRoute,
+  AdminLoginRoute: AdminLoginRoute,
+  AdminSignupRoute: AdminSignupRoute,
+  AdminIndexRoute: AdminIndexRoute,
+  AdminSurveysIndexRoute: AdminSurveysIndexRoute,
+  AdminSurveysSurveyIdChatRoute: AdminSurveysSurveyIdChatRoute,
+  AdminSurveysSurveyIdFillRoute: AdminSurveysSurveyIdFillRoute,
+  AdminSurveysSurveyIdIndexRoute: AdminSurveysSurveyIdIndexRoute,
+}
+
+const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
+  AdminRoute: AdminRouteWithChildren,
   CreateRoute: CreateRoute,
   DashboardRoute: DashboardRoute,
   LoginRoute: LoginRoute,
   SignupRoute: SignupRoute,
   SurveysIndexRoute: SurveysIndexRoute,
+  SurveysSurveyIdChatRoute: SurveysSurveyIdChatRoute,
   SurveysSurveyIdFillRoute: SurveysSurveyIdFillRoute,
   SurveysSurveyIdIndexRoute: SurveysSurveyIdIndexRoute,
 }

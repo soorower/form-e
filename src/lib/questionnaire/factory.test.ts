@@ -19,7 +19,9 @@ describe('createQuestion', () => {
       if (question.type === 'choice_experiment') {
         expect(question.cards).toEqual([])
         expect(question.scenariosPerRespondent).toBe(3)
-        expect(question.prompt.bn).not.toBe('')
+        expect(question.prompts).toHaveLength(1)
+        expect(question.prompts[0].answer).toBe('alternative')
+        expect(question.prompts[0].text.bn).not.toBe('')
       }
       if (
         question.type === 'single_choice' ||

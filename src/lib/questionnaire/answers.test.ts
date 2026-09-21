@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { isAnswered, normalizeTableAnswer } from './answers'
-import { createQuestion } from './factory'
+import {
+  answerScenario,
+  isAnswered,
+  normalizeTableAnswer,
+  scenarioChoice,
+  setScenarioOther,
+} from './answers'
+import { createPrompt, createQuestion } from './factory'
 import type { TableQuestion } from './types'
 
 function tableQuestion(): TableQuestion {
@@ -85,5 +91,46 @@ describe('isAnswered for a choice experiment', () => {
         ],
       }),
     ).toBe(true)
+  })
+})
+
+describe('scenario answers with several questions', () => {
+  const first = createPrompt('alternative')
+  const second = createPrompt('options')
+
+  it('records each question by its key and mirrors the first into `choice`', () => {
+    const scenario = { set: 4, levels: {}, choice: '' }
+    const afterFirst = answerScenario(scenario, first, 0, 'Bus')
+    expect(afterFirst.choice).toBe('Bus')
+    expect(afterFirst.choices).toEqual({ [first.key]: 'Bus' })
+    const afterSecond = answerScenario(afterFirst, second, 1, 'other')
+    expect(afterSecond.choice).toBe('Bus')
+    expect(afterSecond.choices).toEqual({ [first.key]: 'Bus', [second.key]: 'other' })
+    const typed = setScenarioOther(afterSecond, second, 'Motorcycle')
+    expect(typed.other).toEqual({ [second.key]: 'Motorcycle' })
+  })
+
+  it('falls back to `choice` for the first question of an older response', () => {
+    const legacy = { set: 1, levels: {}, choice: 'A' }
+    expect(scenarioChoice(legacy, first, 0)).toBe('A')
+    expect(scenarioChoice(legacy, second, 1)).toBe('')
+  })
+})
+
+describe('isAnswered for a choice block with several questions', () => {
+  it('needs every question of every scenario answered', () => {
+    const block = createQuestion('choice_experiment')
+    if (block.type !== 'choice_experiment') throw new Error('expected a choice experiment')
+    const [first] = block.prompts
+    const second = createPrompt('options')
+    block.prompts = [first, second]
+    const scenario = { set: 1, levels: {}, choice: '' }
+    expect(isAnswered(block, { scenarios: [] })).toBe(false)
+    expect(isAnswered(block, { scenarios: [answerScenario(scenario, first, 0, 'A')] })).toBe(false)
+    const full = answerScenario(answerScenario(scenario, first, 0, 'A'), second, 1, 'yes')
+    expect(isAnswered(block, { scenarios: [full] })).toBe(true)
+    // An older single-answer response still counts for a single-prompt block.
+    block.prompts = [first]
+    expect(isAnswered(block, { scenarios: [{ set: 1, levels: {}, choice: 'A' }] })).toBe(true)
   })
 })

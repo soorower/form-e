@@ -1,6 +1,14 @@
-import { useEffect } from 'react'
-import { isChoiceExperimentAnswer } from '#/lib/questionnaire/answers'
+import { useEffect, type ReactNode } from 'react'
+import { Input } from '#/components/ui/input'
 import {
+  OTHER_ANSWER,
+  answerScenario,
+  isChoiceExperimentAnswer,
+  scenarioChoice,
+  setScenarioOther,
+} from '#/lib/questionnaire/answers'
+import {
+  attributeSections,
   columnKey,
   drawScenarios,
   levelLabel,
@@ -10,7 +18,9 @@ import { formatNumber, pickText } from '#/lib/questionnaire/factory'
 import { FORM_TEXT_DEFAULTS, localizedStyleClass } from '#/lib/questionnaire/text-style'
 import type {
   AnswerValue,
+  ChoiceAttribute,
   ChoiceExperimentQuestion,
+  ChoicePrompt,
   ChoiceScenarioAnswer,
   Lang,
 } from '#/lib/questionnaire/types'
@@ -19,7 +29,7 @@ import type { AnswerUpdate } from './QuestionField'
 
 interface ChoiceExperimentFieldProps {
   question: ChoiceExperimentQuestion
-  /** Number of the first scenario's choice question; later scenarios count up from it. */
+  /** Number of the first question under the first scenario; later ones count up from it. */
   number: number
   lang: Lang
   value: AnswerValue | undefined
@@ -36,11 +46,13 @@ interface ChoiceExperimentFieldProps {
 
 /**
  * The stated-preference block: a heading band, the introduction, then one
- * table per drawn card. In the alternatives layout the table has one column
- * per alternative and the choice row sits inside it; in the profile layout
- * the card is one column beside fixed comparison columns and the prompt is
- * answered below the table. Cards are drawn once, when the block first
- * renders without an answer, so the set numbers stay fixed for the response.
+ * table per drawn card followed by the block's prompts. In the alternatives
+ * layout the table has one column per alternative; when the only prompt is
+ * "pick a column" its choice row sits inside the table, otherwise every
+ * prompt is answered below it. In the profile layout the card is one column
+ * beside fixed comparison columns. Cards are drawn once, when the block
+ * first renders without an answer, so the set numbers stay fixed for the
+ * response.
  */
 export function ChoiceExperimentField({
   question,
@@ -66,14 +78,16 @@ export function ChoiceExperimentField({
   const title = pickText(question.label, lang)
   const intro = pickText(question.help, lang)
   const labelId = `label-${question.id}`
+  const perScenario = Math.max(1, question.prompts.length)
 
-  function choose(index: number, alternativeKey: string) {
+  function updateScenario(
+    index: number,
+    change: (scenario: ChoiceScenarioAnswer) => ChoiceScenarioAnswer,
+  ) {
     onChange((current) => {
       if (!isChoiceExperimentAnswer(current)) return current ?? null
       return {
-        scenarios: current.scenarios.map((scenario, i) =>
-          i === index ? { ...scenario, choice: alternativeKey } : scenario,
-        ),
+        scenarios: current.scenarios.map((scenario, i) => (i === index ? change(scenario) : scenario)),
       }
     })
   }
@@ -119,110 +133,205 @@ export function ChoiceExperimentField({
       )}
 
       {answer?.scenarios.map((scenario, index) => (
-        <ScenarioTable
+        <Scenario
           key={`${scenario.set}-${index}`}
           question={question}
           scenario={scenario}
           index={index}
-          number={number + index}
+          number={number + index * perScenario}
           lang={lang}
-          onChoose={(alternativeKey) => choose(index, alternativeKey)}
+          onAnswer={(prompt, promptIndex, chosen) =>
+            updateScenario(index, (current) => answerScenario(current, prompt, promptIndex, chosen))
+          }
+          onOther={(prompt, typed) =>
+            updateScenario(index, (current) => setScenarioOther(current, prompt, typed))
+          }
         />
       ))}
 
       {invalid && (
         <p className="text-sm font-medium text-destructive">
-          {t('Please choose an option in every scenario.', 'অনুগ্রহ করে প্রতিটি দৃশ্যপটে একটি বিকল্প বেছে নিন।')}
+          {t(
+            'Please answer every question in every scenario.',
+            'অনুগ্রহ করে প্রতিটি দৃশ্যপটের প্রতিটি প্রশ্নের উত্তর দিন।',
+          )}
         </p>
       )}
     </section>
   )
 }
 
-interface ScenarioTableProps {
+interface ScenarioProps {
   question: ChoiceExperimentQuestion
   scenario: ChoiceScenarioAnswer
   index: number
+  /** Number of the first question under this scenario's table. */
   number: number
   lang: Lang
-  onChoose: (alternativeKey: string) => void
+  onAnswer: (prompt: ChoicePrompt, promptIndex: number, chosen: string) => void
+  onOther: (prompt: ChoicePrompt, typed: string) => void
 }
 
-function ScenarioTable({ question, scenario, index, number, lang, onChoose }: ScenarioTableProps) {
+function Scenario({ question, scenario, index, number, lang, onAnswer, onOther }: ScenarioProps) {
   const t = (en: string, bn: string) => (lang === 'bn' ? bn : en)
-  const { alternatives, attributes } = question
-  const promptId = `prompt-${question.id}-${index}`
   const attributeHeader = pickText(question.attributeHeader, lang) || t('Attributes', 'বৈশিষ্ট্যসমূহ')
-
-  if (question.layout === 'profile') {
-    return (
-      <ProfileScenario
-        question={question}
-        scenario={scenario}
-        index={index}
-        number={number}
-        lang={lang}
-        onChoose={onChoose}
-        promptId={promptId}
-        attributeHeader={attributeHeader}
-      />
-    )
-  }
+  const [first] = question.prompts
+  // The classic layout keeps the single "which column?" question inside the table.
+  const inline =
+    question.layout === 'alternatives' &&
+    question.prompts.length === 1 &&
+    first !== undefined &&
+    first.answer === 'alternative'
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
       <p className="text-center font-bold">
         {t('Scenario', 'দৃশ্যপট')}-{formatNumber(index + 1, lang)}{' '}
         <span className="text-sm font-normal text-muted-foreground">(SID: {scenario.set})</span>
       </p>
-      <div className="overflow-x-auto rounded-xl border border-border">
-        <table className="w-full border-collapse text-base">
-          <thead>
-            <tr className="bg-muted/70">
-              <th scope="col" className="min-w-40 border-b border-border p-3 text-left font-bold">
-                {attributeHeader}
+      {question.layout === 'profile' ? (
+        <ProfileTable question={question} scenario={scenario} lang={lang} attributeHeader={attributeHeader} />
+      ) : (
+        <AlternativesTable
+          question={question}
+          scenario={scenario}
+          lang={lang}
+          attributeHeader={attributeHeader}
+          inlinePrompt={
+            inline
+              ? {
+                  prompt: first,
+                  number,
+                  id: `prompt-${question.id}-${index}`,
+                  onChoose: (chosen) => onAnswer(first, 0, chosen),
+                }
+              : undefined
+          }
+        />
+      )}
+      {!inline && (
+        <div className="space-y-4">
+          {question.prompts.map((prompt, promptIndex) => (
+            <PromptAnswer
+              key={prompt.key}
+              id={`prompt-${question.id}-${index}-${promptIndex}`}
+              question={question}
+              prompt={prompt}
+              number={number + promptIndex}
+              lang={lang}
+              chosen={scenarioChoice(scenario, prompt, promptIndex)}
+              other={scenario.other?.[prompt.key] ?? ''}
+              onChoose={(chosen) => onAnswer(prompt, promptIndex, chosen)}
+              onOther={(typed) => onOther(prompt, typed)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** A section heading row spanning the whole table, e.g. "Home to Sylhet station". */
+function SectionRow({ text, span }: { text: string; span: number }) {
+  return (
+    <tr className="bg-muted/50">
+      <th scope="colgroup" colSpan={span} className="border-b border-border px-3 py-2 text-left font-semibold">
+        {text}
+      </th>
+    </tr>
+  )
+}
+
+function attributeName(attribute: ChoiceAttribute, lang: Lang) {
+  return pickText(attribute.label, lang) || attribute.key
+}
+
+interface AlternativesTableProps {
+  question: ChoiceExperimentQuestion
+  scenario: ChoiceScenarioAnswer
+  lang: Lang
+  attributeHeader: string
+  /** When set, the prompt's choice row is rendered as the table's last row. */
+  inlinePrompt?: {
+    prompt: ChoicePrompt
+    number: number
+    id: string
+    onChoose: (chosen: string) => void
+  }
+}
+
+function AlternativesTable({
+  question,
+  scenario,
+  lang,
+  attributeHeader,
+  inlinePrompt,
+}: AlternativesTableProps) {
+  const { alternatives } = question
+  const sections = attributeSections(question.attributes)
+  const chosen = inlinePrompt ? scenarioChoice(scenario, inlinePrompt.prompt, 0) : ''
+
+  return (
+    <div className="overflow-x-auto rounded-xl border border-border">
+      <table className="w-full border-collapse text-base">
+        <thead>
+          <tr className="bg-muted/70">
+            <th scope="col" className="min-w-40 border-b border-border p-3 text-left font-bold">
+              {attributeHeader}
+            </th>
+            {alternatives.map((alternative) => (
+              <th
+                key={alternative.key}
+                scope="col"
+                className="min-w-36 border-b border-l border-border p-3 text-center font-bold"
+              >
+                {pickText(alternative.label, lang) || alternative.key}
               </th>
-              {alternatives.map((alternative) => (
-                <th
-                  key={alternative.key}
-                  scope="col"
-                  className="min-w-36 border-b border-l border-border p-3 text-center font-bold"
-                >
-                  {pickText(alternative.label, lang) || alternative.key}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {attributes.map((attribute) => (
-              <tr key={attribute.key} className="border-b border-border">
-                <th scope="row" className="p-3 text-left font-medium">
-                  {pickText(attribute.label, lang) || attribute.key}
-                </th>
-                {alternatives.map((alternative) => (
-                  <td
-                    key={alternative.key}
-                    className="border-l border-border p-3 text-center whitespace-pre-line"
-                  >
-                    {levelLabel(
-                      question,
-                      scenario.levels[columnKey(question, attribute.key, alternative.key)] ?? '',
-                      lang,
-                    )}
-                  </td>
-                ))}
-              </tr>
             ))}
+          </tr>
+        </thead>
+        <tbody>
+          {sections.map((section, sectionIndex) => (
+            <SectionRows
+              key={sectionIndex}
+              heading={section.group ? pickText(section.group, lang) : ''}
+              span={alternatives.length + 1}
+            >
+              {section.attributes.map((attribute) => (
+                <tr key={attribute.key} className="border-b border-border">
+                  <th scope="row" className="p-3 text-left font-medium">
+                    {attributeName(attribute, lang)}
+                  </th>
+                  {alternatives.map((alternative) => (
+                    <td
+                      key={alternative.key}
+                      className="border-l border-border p-3 text-center whitespace-pre-line"
+                    >
+                      {levelLabel(
+                        question,
+                        scenario.levels[columnKey(question, attribute.key, alternative.key)] ?? '',
+                        lang,
+                      )}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </SectionRows>
+          ))}
+          {inlinePrompt && (
             <tr className="bg-muted/40">
               <th
                 scope="row"
-                id={promptId}
-                className={cn('p-3', localizedStyleClass(question.prompt, FORM_TEXT_DEFAULTS.prompt))}
+                id={inlinePrompt.id}
+                className={cn(
+                  'p-3',
+                  localizedStyleClass(inlinePrompt.prompt.text, FORM_TEXT_DEFAULTS.prompt),
+                )}
               >
-                {formatNumber(number, lang)}. {pickText(question.prompt, lang)}
+                {formatNumber(inlinePrompt.number, lang)}. {pickText(inlinePrompt.prompt.text, lang)}
               </th>
               {alternatives.map((alternative) => {
-                const selected = scenario.choice === alternative.key
+                const selected = chosen === alternative.key
                 const altLabel = pickText(alternative.label, lang) || alternative.key
                 return (
                   <td
@@ -236,20 +345,12 @@ function ScenarioTable({ question, scenario, index, number, lang, onChoose }: Sc
                       type="button"
                       role="radio"
                       aria-checked={selected}
-                      aria-labelledby={promptId}
+                      aria-labelledby={inlinePrompt.id}
                       aria-label={altLabel}
-                      onClick={() => onChoose(alternative.key)}
+                      onClick={() => inlinePrompt.onChoose(alternative.key)}
                       className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-lg px-2 outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
                     >
-                      <span
-                        aria-hidden
-                        className={cn(
-                          'flex size-7 shrink-0 items-center justify-center rounded-full border-2 transition-colors',
-                          selected ? 'border-primary bg-primary' : 'border-input bg-background',
-                        )}
-                      >
-                        {selected && <span className="size-3 rounded-full bg-primary-foreground" />}
-                      </span>
+                      <RadioDot selected={selected} size="lg" />
                       <span className={cn('text-sm', selected ? 'font-semibold' : 'text-muted-foreground')}>
                         {altLabel}
                       </span>
@@ -258,138 +359,220 @@ function ScenarioTable({ question, scenario, index, number, lang, onChoose }: Sc
                 )
               })}
             </tr>
-          </tbody>
-        </table>
-      </div>
+          )}
+        </tbody>
+      </table>
     </div>
   )
 }
 
-interface ProfileScenarioProps extends ScenarioTableProps {
-  promptId: string
+/** The rows of one attribute section, under its heading row when it has one. */
+function SectionRows({
+  heading,
+  span,
+  children,
+}: {
+  heading: string
+  span: number
+  children: ReactNode
+}) {
+  return (
+    <>
+      {heading && <SectionRow text={heading} span={span} />}
+      {children}
+    </>
+  )
+}
+
+interface ProfileTableProps {
+  question: ChoiceExperimentQuestion
+  scenario: ChoiceScenarioAnswer
+  lang: Lang
   attributeHeader: string
 }
 
 /**
  * Profile layout: one card column ("the proposed option") beside fixed
- * comparison columns whose text spans every attribute row, then the prompt
- * answered with the block's own options, typically Yes / No.
+ * comparison columns whose text spans every attribute row.
  */
-function ProfileScenario({
-  question,
-  scenario,
-  index,
-  number,
-  lang,
-  onChoose,
-  promptId,
-  attributeHeader,
-}: ProfileScenarioProps) {
-  const t = (en: string, bn: string) => (lang === 'bn' ? bn : en)
-  const { attributes, referenceColumns, choiceOptions } = question
+function ProfileTable({ question, scenario, lang, attributeHeader }: ProfileTableProps) {
+  const { attributes, referenceColumns } = question
   const card = question.alternatives[0]
+  const sections = attributeSections(attributes)
+  // The comparison cells start on the first attribute row and span every
+  // row below it, section headings included; a heading above the first
+  // attribute is the only one that spans the full width instead.
+  const headedSections = sections.filter((section) => section.group).length
+  const referenceSpan = attributes.length + headedSections - (sections[0]?.group ? 1 : 0)
+  let rowIndex = -1
 
   return (
-    <div className="space-y-3">
-      <p className="text-center font-bold">
-        {t('Scenario', 'দৃশ্যপট')}-{formatNumber(index + 1, lang)}{' '}
-        <span className="text-sm font-normal text-muted-foreground">(SID: {scenario.set})</span>
-      </p>
-      <div className="overflow-x-auto rounded-xl border border-border">
-        <table className="w-full border-collapse text-base">
-          <thead>
-            <tr className="bg-muted/70">
-              <th scope="col" className="min-w-40 border-b border-border p-3 text-left font-bold">
-                {attributeHeader}
-              </th>
+    <div className="overflow-x-auto rounded-xl border border-border">
+      <table className="w-full border-collapse text-base">
+        <thead>
+          <tr className="bg-muted/70">
+            <th scope="col" className="min-w-40 border-b border-border p-3 text-left font-bold">
+              {attributeHeader}
+            </th>
+            <th
+              scope="col"
+              className="min-w-44 border-b border-l border-border p-3 text-center font-bold"
+            >
+              {card ? pickText(card.label, lang) || card.key : ''}
+            </th>
+            {referenceColumns.map((column) => (
               <th
+                key={column.key}
                 scope="col"
-                className="min-w-44 border-b border-l border-border p-3 text-center font-bold"
+                className="min-w-36 border-b border-l border-border p-3 text-center font-bold"
               >
-                {card ? pickText(card.label, lang) || card.key : ''}
+                {pickText(column.label, lang)}
               </th>
-              {referenceColumns.map((column) => (
-                <th
-                  key={column.key}
-                  scope="col"
-                  className="min-w-36 border-b border-l border-border p-3 text-center font-bold"
-                >
-                  {pickText(column.label, lang)}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {attributes.map((attribute, rowIndex) => (
-              <tr key={attribute.key} className="border-b border-border last:border-b-0">
-                <th scope="row" className="p-3 text-left font-medium">
-                  {pickText(attribute.label, lang) || attribute.key}
-                </th>
-                <td className="border-l border-border p-3 text-center whitespace-pre-line">
-                  {card
-                    ? levelLabel(
-                        question,
-                        scenario.levels[columnKey(question, attribute.key, card.key)] ?? '',
-                        lang,
-                      )
-                    : ''}
-                </td>
-                {rowIndex === 0 &&
-                  referenceColumns.map((column) => (
-                    <td
-                      key={column.key}
-                      rowSpan={attributes.length}
-                      className="border-l border-border p-3 text-center align-middle whitespace-pre-line text-muted-foreground"
-                    >
-                      {pickText(column.text, lang)}
-                    </td>
-                  ))}
-              </tr>
             ))}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="space-y-2">
-        <p
-          id={promptId}
-          className={cn('text-base', localizedStyleClass(question.prompt, FORM_TEXT_DEFAULTS.prompt))}
-        >
-          {formatNumber(number, lang)}. {pickText(question.prompt, lang)}
-        </p>
-        <div role="radiogroup" aria-labelledby={promptId} className="flex flex-wrap gap-2">
-          {choiceOptions.map((option) => {
-            const selected = scenario.choice === option.key
-            const label = pickText(option.label, lang) || option.key
-            return (
-              <button
-                key={option.key}
-                type="button"
-                role="radio"
-                aria-checked={selected}
-                onClick={() => onChoose(option.key)}
-                className={cn(
-                  'inline-flex min-h-12 min-w-32 items-center justify-center gap-2 rounded-xl border px-5 text-base outline-none transition-colors focus-visible:ring-3 focus-visible:ring-ring/50',
-                  selected
-                    ? 'border-primary bg-primary/10 font-semibold'
-                    : 'border-border bg-background hover:bg-muted',
-                )}
-              >
-                <span
-                  aria-hidden
-                  className={cn(
-                    'flex size-5 shrink-0 items-center justify-center rounded-full border-2',
-                    selected ? 'border-primary bg-primary' : 'border-input bg-background',
-                  )}
-                >
-                  {selected && <span className="size-2 rounded-full bg-primary-foreground" />}
-                </span>
-                {label}
-              </button>
-            )
-          })}
-        </div>
-      </div>
+          </tr>
+        </thead>
+        <tbody>
+          {sections.map((section, sectionIndex) => (
+            <SectionRows
+              key={sectionIndex}
+              heading={section.group ? pickText(section.group, lang) : ''}
+              span={sectionIndex === 0 ? referenceColumns.length + 2 : 2}
+            >
+              {section.attributes.map((attribute) => {
+                rowIndex += 1
+                return (
+                  <tr key={attribute.key} className="border-b border-border last:border-b-0">
+                    <th scope="row" className="p-3 text-left font-medium">
+                      {attributeName(attribute, lang)}
+                    </th>
+                    <td className="border-l border-border p-3 text-center whitespace-pre-line">
+                      {card
+                        ? levelLabel(
+                            question,
+                            scenario.levels[columnKey(question, attribute.key, card.key)] ?? '',
+                            lang,
+                          )
+                        : ''}
+                    </td>
+                    {rowIndex === 0 &&
+                      referenceColumns.map((column) => (
+                        <td
+                          key={column.key}
+                          rowSpan={referenceSpan}
+                          className="border-l border-border p-3 text-center align-middle whitespace-pre-line text-muted-foreground"
+                        >
+                          {pickText(column.text, lang)}
+                        </td>
+                      ))}
+                  </tr>
+                )
+              })}
+            </SectionRows>
+          ))}
+        </tbody>
+      </table>
     </div>
+  )
+}
+
+interface PromptAnswerProps {
+  id: string
+  question: ChoiceExperimentQuestion
+  prompt: ChoicePrompt
+  number: number
+  lang: Lang
+  chosen: string
+  other: string
+  onChoose: (chosen: string) => void
+  onOther: (typed: string) => void
+}
+
+/**
+ * One question under a scenario table with its answer buttons: the table's
+ * alternatives, or the prompt's own options plus "Other" with a text field.
+ */
+function PromptAnswer({
+  id,
+  question,
+  prompt,
+  number,
+  lang,
+  chosen,
+  other,
+  onChoose,
+  onOther,
+}: PromptAnswerProps) {
+  const t = (en: string, bn: string) => (lang === 'bn' ? bn : en)
+  // The profile table has a single card column, so its prompts always use options.
+  const usesColumns = prompt.answer === 'alternative' && question.layout !== 'profile'
+  const choices =
+    usesColumns
+      ? question.alternatives.map((alternative) => ({
+          key: alternative.key,
+          label: pickText(alternative.label, lang) || alternative.key,
+        }))
+      : [
+          ...prompt.options.map((option) => ({
+            key: option.key,
+            label: pickText(option.label, lang) || option.key,
+          })),
+          ...(prompt.allowOther ? [{ key: OTHER_ANSWER, label: t('Other', 'অন্যান্য') }] : []),
+        ]
+
+  return (
+    <div className="space-y-2">
+      <p id={id} className={cn('text-base', localizedStyleClass(prompt.text, FORM_TEXT_DEFAULTS.prompt))}>
+        {formatNumber(number, lang)}. {pickText(prompt.text, lang)}
+      </p>
+      <div role="radiogroup" aria-labelledby={id} className="flex flex-wrap gap-2">
+        {choices.map((choice) => {
+          const selected = chosen === choice.key
+          return (
+            <button
+              key={choice.key}
+              type="button"
+              role="radio"
+              aria-checked={selected}
+              onClick={() => onChoose(choice.key)}
+              className={cn(
+                'inline-flex min-h-12 min-w-32 items-center justify-center gap-2 rounded-xl border px-5 text-base outline-none transition-colors focus-visible:ring-3 focus-visible:ring-ring/50',
+                selected
+                  ? 'border-primary bg-primary/10 font-semibold'
+                  : 'border-border bg-background hover:bg-muted',
+              )}
+            >
+              <RadioDot selected={selected} size="sm" />
+              {choice.label}
+            </button>
+          )
+        })}
+      </div>
+      {prompt.allowOther && chosen === OTHER_ANSWER && (
+        <Input
+          value={other}
+          onChange={(event) => onOther(event.target.value)}
+          placeholder={t('Please specify', 'অনুগ্রহ করে লিখুন')}
+          aria-label={t('Other answer', 'অন্য উত্তর')}
+          className="h-12 max-w-md text-base md:text-base"
+        />
+      )}
+    </div>
+  )
+}
+
+function RadioDot({ selected, size }: { selected: boolean; size: 'sm' | 'lg' }) {
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        'flex shrink-0 items-center justify-center rounded-full border-2 transition-colors',
+        size === 'lg' ? 'size-7' : 'size-5',
+        selected ? 'border-primary bg-primary' : 'border-input bg-background',
+      )}
+    >
+      {selected && (
+        <span className={cn('rounded-full bg-primary-foreground', size === 'lg' ? 'size-3' : 'size-2')} />
+      )}
+    </span>
   )
 }

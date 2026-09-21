@@ -14,10 +14,12 @@ import { Switch } from '#/components/ui/switch'
 import { questionTypeLabel } from '#/lib/questionnaire/factory'
 import { FORM_TEXT_DEFAULTS } from '#/lib/questionnaire/text-style'
 import type { Lang, Question } from '#/lib/questionnaire/types'
+import { cn } from '#/lib/utils'
 import { ChoiceExperimentEditor } from './ChoiceExperimentEditor'
 import { LocalizedInput } from './LocalizedInput'
 import { OptionsEditor } from './OptionsEditor'
 import { QUESTION_ICONS } from './question-icons'
+import { DragHandle, type DragHandleProps } from './SortableList'
 import { TableEditor } from './TableEditor'
 
 interface QuestionCardProps {
@@ -25,6 +27,9 @@ interface QuestionCardProps {
   index: number
   total: number
   languages: Lang[]
+  /** From the surrounding SortableItem; the card shows a grip when given one. */
+  handle?: DragHandleProps
+  dragging?: boolean
   onChange: (question: Question) => void
   onMove: (direction: -1 | 1) => void
   onDuplicate: () => void
@@ -36,6 +41,8 @@ export function QuestionCard({
   index,
   total,
   languages,
+  handle,
+  dragging = false,
   onChange,
   onMove,
   onDuplicate,
@@ -45,9 +52,10 @@ export function QuestionCard({
   const isBlock = question.type === 'choice_experiment'
 
   return (
-    <Card>
+    <Card className={cn(dragging && 'shadow-xl ring-2 ring-primary/40')}>
       <CardHeader>
         <div className="flex items-center gap-3">
+          {handle && <DragHandle handle={handle} label={`Drag question ${index + 1}`} className="-ml-2" />}
           <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
             <Icon className="size-4" />
           </span>

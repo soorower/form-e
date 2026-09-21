@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '#/com
 import { Input } from '#/components/ui/input'
 import { Label } from '#/components/ui/label'
 import { Separator } from '#/components/ui/separator'
+import { AUTH_AREAS, type AuthArea } from '#/lib/auth/areas'
 import { authErrorMessage, safeRedirect, type AuthMode } from '#/lib/auth/errors'
 import { GoogleIcon } from './GoogleIcon'
 
@@ -14,22 +15,47 @@ const MIN_PASSWORD_LENGTH = 8
 
 interface AuthFormProps {
   mode: AuthMode
+  /** Which sign-in area this form belongs to: the app or the admin panel. */
+  area?: AuthArea
   /** Same-origin path to land on afterwards; kept in links between the two pages. */
   redirect?: string
 }
 
+const COPY = {
+  app: {
+    signIn: { title: 'Welcome back', text: 'Sign in to manage your surveys and responses.' },
+    signUp: {
+      title: 'Create your account',
+      text: 'Start building questionnaires for your survey team.',
+    },
+  },
+  admin: {
+    signIn: {
+      title: 'Admin sign in',
+      text: 'Sign in with the admin account to manage groups and access.',
+    },
+    signUp: {
+      title: 'Create the admin account',
+      text: 'Use the email set as admin on the deployment; other accounts cannot get in here.',
+    },
+  },
+} as const
+
 /**
  * Sign in / sign up card: Google first, then email + password. Both paths end
- * on `redirect` (default: the surveys list). Google leaves the page for the
- * provider and comes back with a `?code=` that ConvexAuthProvider exchanges.
+ * on `redirect` (default: the area's home page). Google leaves the page for
+ * the provider and comes back with a `?code=` that the area's
+ * ConvexAuthProvider exchanges.
  */
-export function AuthForm({ mode, redirect }: AuthFormProps) {
+export function AuthForm({ mode, area = 'app', redirect }: AuthFormProps) {
   const { signIn } = useAuthActions()
   const navigate = useNavigate()
   const [pending, setPending] = useState<'password' | 'google' | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const target = safeRedirect(redirect)
+  const paths = AUTH_AREAS[area]
+  const target = safeRedirect(redirect, paths.home)
   const isSignUp = mode === 'signUp'
+  const copy = COPY[area][mode]
 
   async function submitPassword(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -55,7 +81,9 @@ export function AuthForm({ mode, redirect }: AuthFormProps) {
     setError(null)
     setPending('google')
     try {
-      await signIn('google', { redirectTo: target })
+      // Absolute, so the code comes back to this origin (its storage holds the
+      // verifier); the server checks it against SITE_URL / EXTRA_SITE_URLS.
+      await signIn('google', { redirectTo: window.location.origin + target })
       // The browser is now navigating to Google; keep the spinner until then.
     } catch (err) {
       setError(authErrorMessage(err, mode))
@@ -66,14 +94,8 @@ export function AuthForm({ mode, redirect }: AuthFormProps) {
   return (
     <Card className="w-full shadow-xl shadow-indigo-500/5 ring-foreground/10 [--card-spacing:--spacing(6)]">
       <CardHeader className="text-center">
-        <CardTitle className="text-2xl font-extrabold tracking-tight">
-          {isSignUp ? 'Create your account' : 'Welcome back'}
-        </CardTitle>
-        <CardDescription>
-          {isSignUp
-            ? 'Start building questionnaires for your survey team.'
-            : 'Sign in to manage your surveys and responses.'}
-        </CardDescription>
+        <CardTitle className="text-2xl font-extrabold tracking-tight">{copy.title}</CardTitle>
+        <CardDescription>{copy.text}</CardDescription>
       </CardHeader>
 
       <CardContent className="space-y-5">
@@ -166,7 +188,7 @@ export function AuthForm({ mode, redirect }: AuthFormProps) {
             <>
               Already have an account?{' '}
               <Link
-                to="/login"
+                to={paths.login}
                 search={{ redirect }}
                 className="font-semibold text-primary underline-offset-4 hover:underline"
               >
@@ -177,7 +199,7 @@ export function AuthForm({ mode, redirect }: AuthFormProps) {
             <>
               New to Form-E?{' '}
               <Link
-                to="/signup"
+                to={paths.signup}
                 search={{ redirect }}
                 className="font-semibold text-primary underline-offset-4 hover:underline"
               >

@@ -8,11 +8,15 @@
  * @module
  */
 
+import type * as access from "../access.js";
+import type * as admin from "../admin.js";
 import type * as auth from "../auth.js";
+import type * as authRedirect from "../authRedirect.js";
 import type * as http from "../http.js";
 import type * as messages from "../messages.js";
 import type * as questionnaires from "../questionnaires.js";
 import type * as responses from "../responses.js";
+import type * as teams from "../teams.js";
 import type * as users from "../users.js";
 import type * as validators from "../validators.js";
 
@@ -23,11 +27,15 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  access: typeof access;
+  admin: typeof admin;
   auth: typeof auth;
+  authRedirect: typeof authRedirect;
   http: typeof http;
   messages: typeof messages;
   questionnaires: typeof questionnaires;
   responses: typeof responses;
+  teams: typeof teams;
   users: typeof users;
   validators: typeof validators;
 }>;

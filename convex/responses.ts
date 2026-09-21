@@ -1,6 +1,22 @@
 import { v } from 'convex/values'
 import { mutation, query } from './_generated/server'
+import {
+  canAccess,
+  canView,
+  displayName,
+  isApproved,
+  questionnaireByAppId,
+  requireBuilder,
+  viewerAccess,
+  visibleQuestionnaires,
+} from './access'
 import { lang } from './validators'
+
+// Reading answers needs builder access to their survey. `progress` gives the
+// team (surveyors included) who collected what, without the answers.
+// Submitting, the next serial, and card exposure stay public: they serve the
+// tablet fill page, where enumerators need not sign in; a signed-in surveyor
+// is stamped onto the response by the server.
 
 /** "ACBUS-" + 7 -> "ACBUS-007". Mirrors formatSurveyNumber in the client. */
 function formatSurveyNumber(prefix: string, serial: number): string {
@@ -22,6 +38,8 @@ async function highestSerial(
 export const listBySurvey = query({
   args: { questionnaireId: v.string() },
   handler: async (ctx, { questionnaireId }) => {
+    const questionnaire = await questionnaireByAppId(ctx, questionnaireId)
+    if (!questionnaire || !canAccess(await viewerAccess(ctx), questionnaire)) return []
     const rows = await ctx.db
       .query('responses')
       .withIndex('by_questionnaire', (q) => q.eq('questionnaireId', questionnaireId))
@@ -30,10 +48,54 @@ export const listBySurvey = query({
   },
 })
 
-/** Every response across every survey, for the dashboard's team totals. */
+/** Every response to a survey the caller can see, for the dashboard's team totals. */
 export const listAll = query({
   args: {},
-  handler: async (ctx) => ctx.db.query('responses').collect(),
+  handler: async (ctx) => {
+    const access = await viewerAccess(ctx)
+    if (access?.admin) return ctx.db.query('responses').collect()
+    const rows = []
+    for (const questionnaire of await visibleQuestionnaires(ctx, access)) {
+      rows.push(
+        ...(await ctx.db
+          .query('responses')
+          .withIndex('by_questionnaire', (q) => q.eq('questionnaireId', questionnaire.id))
+          .collect()),
+      )
+    }
+    return rows
+  },
+})
+
+/**
+ * Who collected what, across every survey the caller is on the team of:
+ * enough for counts, leaderboards, and progress bars, without any answers.
+ * Surveyors get this for their assigned surveys; builders for theirs.
+ */
+export const progress = query({
+  args: {},
+  handler: async (ctx) => {
+    const access = await viewerAccess(ctx)
+    const rows = []
+    for (const questionnaire of await visibleQuestionnaires(ctx, access)) {
+      if (!canView(access, questionnaire)) continue
+      const responses = await ctx.db
+        .query('responses')
+        .withIndex('by_questionnaire', (q) => q.eq('questionnaireId', questionnaire.id))
+        .collect()
+      for (const response of responses) {
+        rows.push({
+          id: response.id,
+          questionnaireId: response.questionnaireId,
+          serial: response.serial,
+          enumerator: response.enumerator,
+          surveyorCode: response.surveyorCode ?? null,
+          submittedAt: response.submittedAt,
+        })
+      }
+    }
+    return rows
+  },
 })
 
 /** The number the next response on this survey will get, shown before submitting. */
@@ -71,8 +133,23 @@ export const submit = mutation({
     const serial = (await highestSerial(ctx, args.questionnaireId)) + 1
     const surveyNumber = formatSurveyNumber(questionnaire?.surveyCodePrefix ?? '', serial)
 
+    // A signed-in, approved account is stamped onto the response. A
+    // surveyor's responses always carry their own name, whatever the tablet
+    // sent, so the leaderboard cannot be gamed by typing another name.
+    const access = await viewerAccess(ctx)
+    const signedIn = access && isApproved(access) ? access : null
+    const enumerator =
+      signedIn?.role === 'surveyor' ? displayName(signedIn.user) : args.enumerator
+
     await ctx.db.insert('responses', {
       ...args,
+      enumerator,
+      ...(signedIn
+        ? {
+            surveyorId: signedIn.user._id,
+            ...(signedIn.user.surveyorCode ? { surveyorCode: signedIn.user.surveyorCode } : {}),
+          }
+        : {}),
       serial,
       surveyNumber,
       submittedAt: Date.now(),
@@ -98,8 +175,16 @@ export const importMany = mutation({
     ),
   },
   handler: async (ctx, { responses }) => {
+    const access = await requireBuilder(ctx)
+    const allowed = new Map<string, boolean>()
     let imported = 0
     for (const response of responses) {
+      // Only into surveys the caller can see; the rest are silently skipped.
+      if (!allowed.has(response.questionnaireId)) {
+        const questionnaire = await questionnaireByAppId(ctx, response.questionnaireId)
+        allowed.set(response.questionnaireId, !!questionnaire && canAccess(access, questionnaire))
+      }
+      if (!allowed.get(response.questionnaireId)) continue
       const existing = await ctx.db
         .query('responses')
         .withIndex('by_app_id', (q) => q.eq('id', response.id))

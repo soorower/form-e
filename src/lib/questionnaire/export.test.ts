@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { parseCardTable, EXAMPLE_CARD_TABLE } from './cards'
+import { parseCardTable, EXAMPLE_CARD_TABLE, EXAMPLE_TWO_ROW_CARD_TABLE } from './cards'
 import { exportColumns, responsesToRows, toCsv } from './export'
-import { createQuestion, createQuestionnaire } from './factory'
+import { createPrompt, createQuestion, createQuestionnaire, text } from './factory'
 import type { Questionnaire, SurveyResponse } from './types'
 
 function buildQuestionnaire(): Questionnaire {
@@ -118,6 +118,89 @@ describe('profile layout export', () => {
     ])
     expect(rows[0]).toMatchObject({ Set: 2, Distance: '1 km', Parking: 'No', Choice: 'Yes' })
     expect(exportColumns(questionnaire, rows).slice(-3)).toEqual(['Distance', 'Parking', 'Choice'])
+  })
+})
+
+describe('several questions under each scenario', () => {
+  function accessEgressBlock() {
+    const block = createQuestion('choice_experiment')
+    if (block.type !== 'choice_experiment') throw new Error('expected a choice experiment')
+    const design = parseCardTable(EXAMPLE_TWO_ROW_CARD_TABLE)
+    const mode = createPrompt('options', text('Which mode would you use?'))
+    mode.key = 'mode'
+    mode.options = [
+      { key: 'bus-ac', label: text('Bus (AC)', 'বাস (এসি)') },
+      { key: 'train', label: text('Train', 'ট্রেন') },
+    ]
+    mode.allowOther = true
+    const access = createPrompt('alternative', text('Which column for the access trip?'))
+    access.key = 'access'
+    Object.assign(block, {
+      id: 'sp',
+      label: { en: 'Sylhet to Dhaka', bn: '' },
+      layout: design.layout,
+      attributes: design.attributes,
+      alternatives: design.alternatives,
+      cards: design.cards,
+      scenariosPerRespondent: 2,
+      prompts: [mode, access],
+    })
+    return block
+  }
+
+  it('writes one Choice column per question, numbers scenarios by question count, and keeps the Other text', () => {
+    const block = accessEgressBlock()
+    const age = createQuestion('number')
+    age.id = 'age'
+    age.label = { en: 'Age', bn: '' }
+    const questionnaire = { ...createQuestionnaire(), questions: [age, block] }
+    const rows = responsesToRows(questionnaire, [
+      {
+        ...response,
+        answers: {
+          age: '31',
+          sp: {
+            scenarios: [
+              {
+                set: 3,
+                levels: { Travel_Cost_Bus: 'x' },
+                choice: 'other',
+                choices: { mode: 'other', access: 'Train' },
+                other: { mode: 'Motorcycle' },
+              },
+              {
+                set: 1,
+                levels: { Travel_Cost_Bus: 'y' },
+                choice: 'bus-ac',
+                choices: { mode: 'bus-ac', access: 'Air' },
+              },
+            ],
+          },
+        },
+      },
+    ])
+    expect(rows).toHaveLength(2)
+    expect(rows[0]).toMatchObject({
+      '1. Age': '31',
+      Question: 2,
+      Scenario: 1,
+      Set: 3,
+      Choice: 'Other',
+      'Choice (other)': 'Motorcycle',
+      'Choice 2': 'Train',
+    })
+    expect(rows[1]).toMatchObject({ Question: 4, Scenario: 2, Choice: 'Bus (AC)', 'Choice (other)': '', 'Choice 2': 'Air' })
+    expect(exportColumns(questionnaire, rows).slice(-3)).toEqual(['Choice', 'Choice (other)', 'Choice 2'])
+  })
+
+  it('reads the first question’s answer from `choice` on responses recorded before blocks asked several', () => {
+    const block = accessEgressBlock()
+    const questionnaire = { ...createQuestionnaire(), questions: [block] }
+    const rows = responsesToRows(questionnaire, [
+      { ...response, answers: { sp: { scenarios: [{ set: 1, levels: {}, choice: 'train' }] } } },
+    ])
+    expect(rows[0].Choice).toBe('Train')
+    expect(rows[0]['Choice 2']).toBe('')
   })
 })
 

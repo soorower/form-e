@@ -134,8 +134,9 @@ export function TeamEditor({ questionnaire, onChange, onDone }: TeamEditorProps)
           Add member
         </Button>
         <p className="text-xs text-muted-foreground">
-          Members pick their name on the tablet before collecting, so every response counts for them
-          here.
+          Names for tablets used without signing in: members pick theirs before collecting, so every
+          response counts for them here. Surveyors with their own account are added above and need
+          no name here.
         </p>
       </div>
 

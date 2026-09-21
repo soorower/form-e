@@ -3,6 +3,7 @@ import { Password } from '@convex-dev/auth/providers/Password'
 import { convexAuth } from '@convex-dev/auth/server'
 import { ConvexError } from 'convex/values'
 import type { DataModel } from './_generated/dataModel'
+import { resolveRedirect } from './authRedirect'
 
 export const MIN_PASSWORD_LENGTH = 8
 
@@ -31,4 +32,11 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
       },
     }),
   ],
+  callbacks: {
+    // Google sign-in returns to the origin it started on: SITE_URL (localhost
+    // in dev) or a hosted origin listed in EXTRA_SITE_URLS.
+    async redirect({ redirectTo }) {
+      return resolveRedirect(redirectTo, process.env.SITE_URL, process.env.EXTRA_SITE_URLS)
+    },
+  },
 })

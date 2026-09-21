@@ -1,5 +1,14 @@
 import { useRef, useState, type ChangeEvent } from 'react'
-import { FileUp, Languages, Plus, Sparkles, Trash2, Upload } from 'lucide-react'
+import {
+  ChevronDown,
+  ChevronUp,
+  FileUp,
+  Languages,
+  Plus,
+  Sparkles,
+  Trash2,
+  Upload,
+} from 'lucide-react'
 import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
 import { Input } from '#/components/ui/input'
@@ -11,6 +20,7 @@ import { Textarea } from '#/components/ui/textarea'
 import {
   EXAMPLE_CARD_TABLE,
   EXAMPLE_PROFILE_CARD_TABLE,
+  EXAMPLE_TWO_ROW_CARD_TABLE,
   applyTranslationTable,
   attributeLevels,
   columnKey,
@@ -19,19 +29,31 @@ import {
 import {
   LANGUAGES,
   LANGUAGE_LABELS,
-  defaultChoiceOptions,
+  createPrompt,
   pickText,
   text,
   uid,
 } from '#/lib/questionnaire/factory'
+import { moveItem } from '#/lib/list'
 import { FORM_TEXT_DEFAULTS } from '#/lib/questionnaire/text-style'
-import type { ChoiceExperimentQuestion, Lang, LocalizedText } from '#/lib/questionnaire/types'
+import type {
+  ChoiceExperimentQuestion,
+  ChoicePrompt,
+  ChoicePromptAnswer,
+  Lang,
+  LocalizedText,
+} from '#/lib/questionnaire/types'
 import { LocalizedInput } from './LocalizedInput'
 
 interface ChoiceExperimentEditorProps {
   question: ChoiceExperimentQuestion
   languages: Lang[]
   onChange: (patch: Partial<ChoiceExperimentQuestion>) => void
+}
+
+const ANSWER_LABELS: Record<ChoicePromptAnswer, string> = {
+  alternative: 'Table columns',
+  options: 'Own options',
 }
 
 export function ChoiceExperimentEditor({ question, languages, onChange }: ChoiceExperimentEditorProps) {
@@ -49,7 +71,11 @@ export function ChoiceExperimentEditor({ question, languages, onChange }: Choice
   function applyTranslation(source: string) {
     try {
       const result = applyTranslationTable(question, source, translateLang)
-      onChange({ levelLabels: result.levelLabels, attributes: result.attributes })
+      onChange({
+        levelLabels: result.levelLabels,
+        attributes: result.attributes,
+        alternatives: result.alternatives,
+      })
       const parts = [
         `Filled ${LANGUAGE_LABELS[translateLang]} wording for ${result.translated} ${
           result.translated === 1 ? 'level' : 'levels'
@@ -57,6 +83,9 @@ export function ChoiceExperimentEditor({ question, languages, onChange }: Choice
       ]
       if (result.attributeLabelsFilled > 0) {
         parts.push(`Set ${result.attributeLabelsFilled} attribute row labels from the header.`)
+      }
+      if (result.alternativeLabelsFilled > 0) {
+        parts.push(`Set ${result.alternativeLabelsFilled} alternative headings from the header.`)
       }
       if (result.unmatchedSets.length > 0) {
         parts.push(
@@ -87,13 +116,22 @@ export function ChoiceExperimentEditor({ question, languages, onChange }: Choice
   function importCards(source: string) {
     try {
       const design = parseCardTable(source, question)
+      // A single card column cannot be "picked", so profile prompts use options.
+      const prompts =
+        design.layout === 'profile'
+          ? question.prompts.map((prompt) =>
+              prompt.answer === 'alternative' ? { ...prompt, answer: 'options' as const } : prompt,
+            )
+          : question.prompts
       onChange({
         layout: design.layout,
         attributes: design.attributes,
         alternatives: design.alternatives,
         cards: design.cards,
-        choiceOptions:
-          question.choiceOptions.length > 0 ? question.choiceOptions : defaultChoiceOptions(),
+        prompts,
+        levelLabels: design.translation
+          ? { ...question.levelLabels, ...design.translation.levelLabels }
+          : question.levelLabels,
         scenariosPerRespondent: Math.max(
           1,
           Math.min(question.scenariosPerRespondent, design.cards.length),
@@ -101,13 +139,16 @@ export function ChoiceExperimentEditor({ question, languages, onChange }: Choice
       })
       const summary =
         design.layout === 'profile'
-          ? `Imported ${design.cards.length} cards with ${design.attributes.length} attributes. Each card describes one option; respondents answer the choice question below it.`
-          : `Imported ${design.cards.length} cards with ${design.attributes.length} attributes and ${design.alternatives.length} alternatives side by side.`
+          ? `Imported ${design.cards.length} cards with ${design.attributes.length} attributes. Each card describes one option; respondents answer the questions below it.`
+          : `Imported ${design.cards.length} cards with ${design.attributes.length} attributes and ${design.alternatives.length} alternatives (${design.alternatives.map((a) => a.key).join(', ')}) side by side.`
       const ignored =
         design.ignoredColumns.length > 0
           ? ` Ignored columns: ${design.ignoredColumns.join(', ')}.`
           : ''
-      setNotice(summary + ignored)
+      const translated = design.translation
+        ? ` Filled ${LANGUAGE_LABELS[design.translation.lang]} wording for ${design.translation.translated} levels from the translated copy beside the cards.`
+        : ''
+      setNotice(summary + ignored + translated)
       setError(null)
       setPasted('')
       setShowImport(false)
@@ -137,10 +178,20 @@ export function ChoiceExperimentEditor({ question, languages, onChange }: Choice
     })
   }
 
-  function setAttributeLabel(key: string, label: LocalizedText) {
+  function setAttribute(key: string, patch: { label?: LocalizedText; group?: LocalizedText }) {
     onChange({
-      attributes: question.attributes.map((a) => (a.key === key ? { ...a, label } : a)),
+      attributes: question.attributes.map((attribute) => {
+        if (attribute.key !== key) return attribute
+        const next = { ...attribute, ...patch }
+        // An emptied heading is dropped rather than stored as blank text.
+        if (next.group && !next.group.en.trim() && !next.group.bn.trim()) delete next.group
+        return next
+      }),
     })
+  }
+
+  function moveAttribute(index: number, direction: -1 | 1) {
+    onChange({ attributes: moveItem(question.attributes, index, index + direction) })
   }
 
   function setLevelLabel(raw: string, label: LocalizedText) {
@@ -172,25 +223,48 @@ export function ChoiceExperimentEditor({ question, languages, onChange }: Choice
     onChange({ referenceColumns: question.referenceColumns.filter((c) => c.key !== key) })
   }
 
-  function setChoiceOption(key: string, label: LocalizedText) {
+  function setPrompt(key: string, patch: Partial<ChoicePrompt>) {
     onChange({
-      choiceOptions: question.choiceOptions.map((o) => (o.key === key ? { ...o, label } : o)),
+      prompts: question.prompts.map((prompt) => (prompt.key === key ? { ...prompt, ...patch } : prompt)),
     })
   }
 
-  function addChoiceOption() {
-    const key = `option-${question.choiceOptions.length + 1}-${uid().slice(0, 4)}`
-    onChange({ choiceOptions: [...question.choiceOptions, { key, label: text() }] })
+  function addPrompt() {
+    onChange({
+      prompts: [
+        ...question.prompts,
+        createPrompt(question.layout === 'profile' ? 'options' : 'alternative'),
+      ],
+    })
   }
 
-  function removeChoiceOption(key: string) {
-    onChange({ choiceOptions: question.choiceOptions.filter((o) => o.key !== key) })
+  function removePrompt(key: string) {
+    onChange({ prompts: question.prompts.filter((prompt) => prompt.key !== key) })
+  }
+
+  function movePrompt(index: number, direction: -1 | 1) {
+    onChange({ prompts: moveItem(question.prompts, index, index + direction) })
+  }
+
+  function setPromptOption(prompt: ChoicePrompt, key: string, label: LocalizedText) {
+    setPrompt(prompt.key, {
+      options: prompt.options.map((option) => (option.key === key ? { ...option, label } : option)),
+    })
+  }
+
+  function addPromptOption(prompt: ChoicePrompt) {
+    const key = `option-${prompt.options.length + 1}-${uid().slice(0, 4)}`
+    setPrompt(prompt.key, { options: [...prompt.options, { key, label: text() }] })
+  }
+
+  function removePromptOption(prompt: ChoicePrompt, key: string) {
+    setPrompt(prompt.key, { options: prompt.options.filter((option) => option.key !== key) })
   }
 
   const isProfile = question.layout === 'profile'
   const cardAlternative = question.alternatives[0]
 
-  // Same order as the pasted header: every attribute of A, then every attribute of B, …
+  // Same order as a one-row header: every attribute of A, then every attribute of B, …
   const columns = question.alternatives.flatMap((alternative) =>
     question.attributes.map((attribute) => columnKey(question, attribute.key, alternative.key)),
   )
@@ -278,6 +352,15 @@ export function ChoiceExperimentEditor({ question, languages, onChange }: Choice
                 type="button"
                 variant="ghost"
                 size="sm"
+                onClick={() => setPasted(EXAMPLE_TWO_ROW_CARD_TABLE)}
+              >
+                <Sparkles data-icon="inline-start" />
+                Example: Bus / Train / Air
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
                 onClick={() => setPasted(EXAMPLE_PROFILE_CARD_TABLE)}
               >
                 <Sparkles data-icon="inline-start" />
@@ -297,15 +380,20 @@ export function ChoiceExperimentEditor({ question, languages, onChange }: Choice
               onChange={handleFile}
             />
             <p className="text-xs text-muted-foreground">
-              Two layouts are recognised from the header. Columns named{' '}
+              Three headers are recognised. Columns named{' '}
               <span className="font-mono">Attribute_Alternative</span> (
               <span className="font-mono">Cost_A</span>, <span className="font-mono">Cost_B</span>)
-              put alternatives side by side and respondents pick one. Plain columns (
+              put alternatives side by side and respondents pick one. A two-row header, with
+              attribute headings such as “Travel Cost” above repeating{' '}
+              <span className="font-mono">Bus | Train | Air</span> columns, does the same and
+              keeps the headings as labels. Plain columns (
               <span className="font-mono">Distance</span>, <span className="font-mono">Parking</span>)
               make each card one option, shown beside a comparison column such as “your current
               destination”, and respondents answer Yes / No. A{' '}
               <span className="font-mono">Set</span> or <span className="font-mono">Card ID</span>{' '}
-              column numbers the cards. Cells may hold several lines.
+              column numbers the cards; cells may hold several lines. If the sheet keeps a
+              Bangla copy of the table to the right of the English one, paste both: the copy
+              becomes the Bangla wording.
             </p>
           </div>
         ) : (
@@ -399,8 +487,8 @@ export function ChoiceExperimentEditor({ question, languages, onChange }: Choice
                 <p className="text-xs text-muted-foreground">
                   Rows are matched by card number and columns by name, or by position when the
                   header is translated. Each translated cell becomes the wording for its English
-                  level, and a translated header fills empty attribute row labels. Nothing is
-                  translated automatically.
+                  level, and a translated header fills empty attribute row labels and alternative
+                  headings. Nothing is translated automatically.
                 </p>
               </div>
             )}
@@ -522,7 +610,11 @@ export function ChoiceExperimentEditor({ question, languages, onChange }: Choice
               <div className="space-y-2">
                 {question.alternatives.map((alternative) => (
                   <div key={alternative.key} className="flex items-start gap-2">
-                    <Badge variant="outline" className="mt-2 w-10 justify-center font-mono">
+                    <Badge
+                      variant="outline"
+                      className="mt-2 max-w-28 justify-center truncate font-mono"
+                      title={alternative.key}
+                    >
                       {alternative.key}
                     </Badge>
                     <LocalizedInput
@@ -539,27 +631,62 @@ export function ChoiceExperimentEditor({ question, languages, onChange }: Choice
           )}
 
           <div className="space-y-2">
-            <Label>Attribute row labels</Label>
+            <Label>Attribute rows</Label>
             <div className="space-y-2">
-              {question.attributes.map((attribute) => (
-                <div key={attribute.key} className="flex items-start gap-2">
-                  <Badge
-                    variant="outline"
-                    className="mt-2 max-w-40 justify-center truncate font-mono"
-                    title={attribute.key}
-                  >
-                    {attribute.key}
-                  </Badge>
+              {question.attributes.map((attribute, index) => (
+                <div key={attribute.key} className="space-y-2 rounded-lg border border-border p-3">
+                  <div className="flex items-start gap-2">
+                    <Badge
+                      variant="outline"
+                      className="mt-2 max-w-40 justify-center truncate font-mono"
+                      title={attribute.key}
+                    >
+                      {attribute.key}
+                    </Badge>
+                    <LocalizedInput
+                      className="min-w-0 flex-1"
+                      value={attribute.label}
+                      onChange={(label) => setAttribute(attribute.key, { label })}
+                      languages={languages}
+                      placeholder="Row label"
+                    />
+                    <div className="flex shrink-0 flex-col">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label={`Move ${attribute.key} up`}
+                        disabled={index === 0}
+                        onClick={() => moveAttribute(index, -1)}
+                      >
+                        <ChevronUp />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label={`Move ${attribute.key} down`}
+                        disabled={index === question.attributes.length - 1}
+                        onClick={() => moveAttribute(index, 1)}
+                      >
+                        <ChevronDown />
+                      </Button>
+                    </div>
+                  </div>
                   <LocalizedInput
-                    className="min-w-0 flex-1"
-                    value={attribute.label}
-                    onChange={(label) => setAttributeLabel(attribute.key, label)}
+                    value={attribute.group ?? text()}
+                    onChange={(group) => setAttribute(attribute.key, { group })}
                     languages={languages}
-                    placeholder="Row label"
+                    placeholder="Section heading above this row (optional)"
                   />
                 </div>
               ))}
             </div>
+            <p className="text-xs text-muted-foreground">
+              Rows appear in this order. Give consecutive rows the same section heading to group
+              them under it in the table, for example “Home to Sylhet station” above access time
+              and access cost.
+            </p>
           </div>
 
           <div className="space-y-3">
@@ -602,57 +729,142 @@ export function ChoiceExperimentEditor({ question, languages, onChange }: Choice
         </>
       )}
 
-      <div className="space-y-2">
-        <Label>Choice question</Label>
-        <LocalizedInput
-          value={question.prompt}
-          onChange={(prompt) => onChange({ prompt })}
-          languages={languages}
-          placeholder="Which option would you choose?"
-          formatting={FORM_TEXT_DEFAULTS.prompt}
-        />
-        <p className="text-xs text-muted-foreground">
-          Asked under every scenario table. Each scenario gets its own question number.
-        </p>
-        {isProfile && (
-          <div className="space-y-2 pt-2">
-            <Label>Answer options</Label>
-            <div className="space-y-2">
-              {question.choiceOptions.map((option, index) => (
-                <div key={option.key} className="flex items-start gap-2">
-                  <span className="w-6 shrink-0 pt-2 text-right text-xs tabular-nums text-muted-foreground">
-                    {index + 1}.
-                  </span>
-                  <LocalizedInput
-                    className="min-w-0 flex-1"
-                    value={option.label}
-                    onChange={(label) => setChoiceOption(option.key, label)}
-                    languages={languages}
-                    placeholder={`Answer ${index + 1}`}
-                  />
+      <div className="space-y-3">
+        <div>
+          <Label>Questions under each scenario</Label>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Asked under every scenario table, in this order. Each takes its own question number.
+            A single question answered with the table columns is shown inside the table; anything
+            else appears below it as buttons.
+          </p>
+        </div>
+        <div className="space-y-3">
+          {question.prompts.map((prompt, index) => (
+            <div key={prompt.key} className="space-y-3 rounded-lg border border-border p-3">
+              <div className="flex items-start gap-2">
+                <span className="w-6 shrink-0 pt-2 text-right text-xs tabular-nums text-muted-foreground">
+                  {index + 1}.
+                </span>
+                <LocalizedInput
+                  className="min-w-0 flex-1"
+                  value={prompt.text}
+                  onChange={(value) => setPrompt(prompt.key, { text: value })}
+                  languages={languages}
+                  placeholder="Which option would you choose?"
+                  formatting={FORM_TEXT_DEFAULTS.prompt}
+                />
+                <div className="flex shrink-0 flex-col">
                   <Button
                     type="button"
                     variant="ghost"
-                    size="icon"
-                    aria-label={`Remove answer ${index + 1}`}
-                    disabled={question.choiceOptions.length <= 2}
-                    onClick={() => removeChoiceOption(option.key)}
+                    size="icon-sm"
+                    aria-label={`Move question ${index + 1} up`}
+                    disabled={index === 0}
+                    onClick={() => movePrompt(index, -1)}
                   >
-                    <Trash2 />
+                    <ChevronUp />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={`Move question ${index + 1} down`}
+                    disabled={index === question.prompts.length - 1}
+                    onClick={() => movePrompt(index, 1)}
+                  >
+                    <ChevronDown />
                   </Button>
                 </div>
-              ))}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  aria-label={`Remove question ${index + 1}`}
+                  disabled={question.prompts.length <= 1}
+                  onClick={() => removePrompt(prompt.key)}
+                >
+                  <Trash2 />
+                </Button>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 pl-8">
+                {!isProfile && (
+                  <div className="flex items-center gap-2">
+                    <Label className="text-xs text-muted-foreground">Answered with</Label>
+                    <Select
+                      value={prompt.answer}
+                      onValueChange={(value) => value && setPrompt(prompt.key, { answer: value })}
+                      items={ANSWER_LABELS}
+                    >
+                      <SelectTrigger size="sm" className="w-36" aria-label={`Answer type of question ${index + 1}`}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(Object.keys(ANSWER_LABELS) as ChoicePromptAnswer[]).map((answer) => (
+                          <SelectItem key={answer} value={answer}>
+                            {ANSWER_LABELS[answer]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                {prompt.answer === 'options' && (
+                  <Label className="cursor-pointer gap-2 text-xs font-normal">
+                    <Switch
+                      checked={prompt.allowOther}
+                      onCheckedChange={(allowOther) => setPrompt(prompt.key, { allowOther })}
+                    />
+                    Add “Other” with a text field
+                  </Label>
+                )}
+              </div>
+
+              {prompt.answer === 'options' && (
+                <div className="space-y-2 pl-8">
+                  <Label className="text-xs text-muted-foreground">Answer options</Label>
+                  <div className="space-y-2">
+                    {prompt.options.map((option, optionIndex) => (
+                      <div key={option.key} className="flex items-start gap-2">
+                        <span className="w-6 shrink-0 pt-2 text-right text-xs tabular-nums text-muted-foreground">
+                          {optionIndex + 1}.
+                        </span>
+                        <LocalizedInput
+                          className="min-w-0 flex-1"
+                          value={option.label}
+                          onChange={(label) => setPromptOption(prompt, option.key, label)}
+                          languages={languages}
+                          placeholder={`Answer ${optionIndex + 1}`}
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          aria-label={`Remove answer ${optionIndex + 1} of question ${index + 1}`}
+                          disabled={prompt.options.length <= 2}
+                          onClick={() => removePromptOption(prompt, option.key)}
+                        >
+                          <Trash2 />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                  <Button type="button" variant="outline" size="sm" onClick={() => addPromptOption(prompt)}>
+                    <Plus data-icon="inline-start" />
+                    Add answer
+                  </Button>
+                  <p className="text-xs text-muted-foreground">
+                    The English wording is what appears in the export’s Choice column.
+                  </p>
+                </div>
+              )}
             </div>
-            <Button type="button" variant="outline" size="sm" onClick={addChoiceOption}>
-              <Plus data-icon="inline-start" />
-              Add answer
-            </Button>
-            <p className="text-xs text-muted-foreground">
-              The buttons under each scenario, usually Yes / No. The English wording is what
-              appears in the Choice column of exports.
-            </p>
-          </div>
-        )}
+          ))}
+        </div>
+        <Button type="button" variant="outline" size="sm" onClick={addPrompt}>
+          <Plus data-icon="inline-start" />
+          Add question
+        </Button>
       </div>
     </div>
   )

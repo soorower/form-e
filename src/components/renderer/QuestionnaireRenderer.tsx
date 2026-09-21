@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useState, type FormEvent, type KeyboardEvent } from 'react'
 import { Check } from 'lucide-react'
 import { Button } from '#/components/ui/button'
 import { Input } from '#/components/ui/input'
@@ -24,6 +24,11 @@ export interface ResponseMeta {
   enumerator: string
   /** Present when the enumerator can be chosen on this screen. */
   onEnumeratorChange?: (name: string) => void
+  /**
+   * The enumerator is the signed-in account and cannot be changed here, so
+   * the name need not be one of the questionnaire's team names.
+   */
+  locked?: boolean
 }
 
 /** Per choice-experiment question id: how often each card set has been shown. */
@@ -44,6 +49,12 @@ interface QuestionnaireRendererProps {
    * Omit for a preview that records nothing.
    */
   onSubmit?: (response: SurveyResponse) => void | string | Promise<string | void>
+  /**
+   * `page` shows every question on one scrolling page (the default).
+   * `steps` shows one question at a time with Back / Next, the way a
+   * surveyor walks a respondent through the interview.
+   */
+  mode?: 'page' | 'steps'
 }
 
 /** Tablet-first rendering of a questionnaire for respondents. */
@@ -52,17 +63,24 @@ export function QuestionnaireRenderer({
   meta,
   cardExposure,
   onSubmit,
+  mode = 'page',
 }: QuestionnaireRendererProps) {
   const [chosenLang, setChosenLang] = useState<Lang | null>(null)
   const [answers, setAnswers] = useState<Record<string, AnswerValue>>({})
   const [attempted, setAttempted] = useState(false)
   const [submitted, setSubmitted] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  // Steps mode: which question is on screen, and whether Next was pressed
+  // on it while it was still unanswered.
+  const [step, setStep] = useState(0)
+  const [stepAttempted, setStepAttempted] = useState(false)
+  const stepped = mode === 'steps'
 
   const team = activeEnumerators(questionnaire)
   const enumerator = meta?.enumerator.trim() ?? ''
   // With a team list the name must come from it; otherwise any name (or none) is fine.
-  const enumeratorMissing = !!meta && team.length > 0 && !team.includes(enumerator)
+  const enumeratorMissing =
+    !!meta && !meta.locked && team.length > 0 && !team.includes(enumerator)
 
   const lang: Lang =
     chosenLang && questionnaire.languages.includes(chosenLang)
@@ -83,6 +101,14 @@ export function QuestionnaireRenderer({
       return
     }
     if (missing.length > 0) {
+      if (stepped) {
+        // Go back to the first unanswered required question.
+        const index = questionnaire.questions.findIndex((question) => question.id === missing[0])
+        if (index >= 0) setStep(index)
+        setStepAttempted(true)
+        window.scrollTo({ top: 0, behavior: 'smooth' })
+        return
+      }
       document
         .getElementById(questionDomId(missing[0]))
         ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
@@ -113,7 +139,39 @@ export function QuestionnaireRenderer({
     setAttempted(false)
     setSubmitting(false)
     setSubmitted(null)
+    setStep(0)
+    setStepAttempted(false)
     window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  const stepCount = questionnaire.questions.length
+  const current = stepped ? questionnaire.questions[Math.min(step, stepCount - 1)] : undefined
+
+  function goTo(index: number) {
+    setStep(Math.max(0, Math.min(stepCount - 1, index)))
+    setStepAttempted(false)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  /** Next only moves on when a required question has an answer. */
+  function next() {
+    if (!current) return
+    if (current.required && !isAnswered(current, answers[current.id])) {
+      setStepAttempted(true)
+      return
+    }
+    goTo(step + 1)
+  }
+
+  /** In steps mode Enter in a text field means Next, not Submit. */
+  function onFormKeyDown(event: KeyboardEvent<HTMLFormElement>) {
+    if (!stepped || event.key !== 'Enter') return
+    const target = event.target as HTMLElement
+    if (target.tagName !== 'INPUT') return
+    if (step < stepCount - 1) {
+      event.preventDefault()
+      next()
+    }
   }
 
   if (submitted !== null) {
@@ -150,6 +208,7 @@ export function QuestionnaireRenderer({
   return (
     <form
       onSubmit={handleSubmit}
+      onKeyDown={onFormKeyDown}
       noValidate
       lang={lang}
       className="mx-auto w-full max-w-3xl space-y-5"
@@ -280,25 +339,89 @@ export function QuestionnaireRenderer({
         </p>
       )}
 
-      {questions.map((question, index) => (
-        <QuestionField
-          key={question.id}
-          question={question}
-          number={numbers[index]}
-          lang={lang}
-          value={answers[question.id]}
-          onChange={(next: AnswerUpdate) =>
-            setAnswers((current) => ({
-              ...current,
-              [question.id]: typeof next === 'function' ? next(current[question.id]) : next,
-            }))
-          }
-          invalid={attempted && missing.includes(question.id)}
-          exposure={cardExposure ? (cardExposure[question.id] ?? {}) : undefined}
-        />
-      ))}
+      {stepped && current ? (
+        <>
+          <div className="space-y-2 px-1">
+            <div className="flex items-center justify-between text-sm text-muted-foreground">
+              <span>
+                {t('Question', 'প্রশ্ন')}{' '}
+                <span className="font-semibold text-foreground">{step + 1}</span> / {stepCount}
+              </span>
+              <span>{Math.round(((step + 1) / stepCount) * 100)}%</span>
+            </div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-muted" aria-hidden="true">
+              <div
+                className="h-full rounded-full bg-primary transition-[width]"
+                style={{ width: `${((step + 1) / stepCount) * 100}%` }}
+              />
+            </div>
+          </div>
 
-      {questions.length > 0 && (
+          <QuestionField
+            key={current.id}
+            question={current}
+            number={numbers[step]}
+            lang={lang}
+            value={answers[current.id]}
+            onChange={(next: AnswerUpdate) =>
+              setAnswers((all) => ({
+                ...all,
+                [current.id]: typeof next === 'function' ? next(all[current.id]) : next,
+              }))
+            }
+            invalid={(attempted || stepAttempted) && missing.includes(current.id)}
+            exposure={cardExposure ? (cardExposure[current.id] ?? {}) : undefined}
+          />
+
+          {stepAttempted && missing.includes(current.id) && (
+            <p className="text-center text-sm font-medium text-destructive">
+              {t('This question needs an answer.', 'এই প্রশ্নের উত্তর দিতে হবে।')}
+            </p>
+          )}
+
+          <div className="flex items-center justify-between gap-3 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="lg"
+              className="h-12 px-6 text-base"
+              disabled={step === 0 || submitting}
+              onClick={() => goTo(step - 1)}
+            >
+              {t('Back', 'পেছনে')}
+            </Button>
+            {step < stepCount - 1 ? (
+              <Button type="button" size="lg" className="h-12 px-8 text-base" onClick={next}>
+                {t('Next', 'পরবর্তী')}
+              </Button>
+            ) : (
+              <Button type="submit" size="lg" disabled={submitting} className="h-12 px-8 text-base">
+                {submitting ? t('Saving…', 'সংরক্ষণ হচ্ছে…') : t('Submit', 'জমা দিন')}
+              </Button>
+            )}
+          </div>
+        </>
+      ) : (
+        questions.map((question, index) => (
+          <QuestionField
+            key={question.id}
+            question={question}
+            number={numbers[index]}
+            lang={lang}
+            value={answers[question.id]}
+            onChange={(next: AnswerUpdate) =>
+              setAnswers((current) => ({
+                ...current,
+                [question.id]: typeof next === 'function' ? next(current[question.id]) : next,
+              }))
+            }
+            invalid={attempted && missing.includes(question.id)}
+            exposure={cardExposure ? (cardExposure[question.id] ?? {}) : undefined}
+          />
+        ))
+      )}
+
+      {questions.length > 0 && !stepped && (
         <div className="flex flex-col items-center gap-3 pt-2">
           {attempted && missing.length > 0 && (
             <p className="text-sm font-medium text-destructive">

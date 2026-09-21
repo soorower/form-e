@@ -60,6 +60,11 @@ export function Leaderboard({ members, now }: LeaderboardProps) {
                     {initials(member.name)}
                   </span>
                   <span className="font-medium">{member.name}</span>
+                  {member.code && (
+                    <span className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-[11px] font-semibold text-muted-foreground">
+                      {member.code}
+                    </span>
+                  )}
                 </span>
               </TableCell>
               <TableCell className="text-right text-base font-bold tabular-nums">{member.total}</TableCell>

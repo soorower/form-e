@@ -1,17 +1,60 @@
 import { authTables } from '@convex-dev/auth/server'
 import { defineSchema, defineTable } from 'convex/server'
 import { v } from 'convex/values'
-import { lang, questionnaireFields, responseFields } from './validators'
+import { groupFields, lang, questionnaireFields, responseFields, role, userStatus } from './validators'
 
 // Mirrors src/lib/questionnaire/types.ts. Cross-references use the app-level
 // `id` string rather than a Convex _id, so survey URLs stay stable and data
 // created offline on a tablet can be uploaded unchanged.
 
 export default defineSchema({
-  // users, authSessions, authAccounts, authRefreshTokens, ... (Convex Auth)
+  // authSessions, authAccounts, authRefreshTokens, ... (Convex Auth)
   ...authTables,
 
-  questionnaires: defineTable(questionnaireFields).index('by_app_id', ['id']),
+  // Convex Auth's users table plus `role` and `status`. The auth fields are repeated here
+  // because a table can only be defined once; keep them in step with the
+  // library's own definition.
+  users: defineTable({
+    name: v.optional(v.string()),
+    image: v.optional(v.string()),
+    email: v.optional(v.string()),
+    emailVerificationTime: v.optional(v.number()),
+    phone: v.optional(v.string()),
+    phoneVerificationTime: v.optional(v.number()),
+    isAnonymous: v.optional(v.boolean()),
+    role: v.optional(role),
+    status: v.optional(userStatus),
+    // Short code the admin gives a surveyor (e.g. S01), shown next to their name.
+    surveyorCode: v.optional(v.string()),
+  })
+    .index('email', ['email'])
+    .index('phone', ['phone']),
+
+  // Who may build questionnaires and run surveys. Members are kept by email
+  // so the admin can add someone before they have signed up.
+  groups: defineTable(groupFields).index('by_app_id', ['id']),
+  groupMembers: defineTable({
+    groupId: v.string(),
+    email: v.string(),
+    addedAt: v.number(),
+  })
+    .index('by_group', ['groupId'])
+    .index('by_email', ['email']),
+
+  // Which surveyors work on which survey. A surveyor sees exactly the
+  // surveys assigned here; builders and admins assign.
+  assignments: defineTable({
+    questionnaireId: v.string(),
+    email: v.string(),
+    addedAt: v.number(),
+  })
+    .index('by_questionnaire', ['questionnaireId'])
+    .index('by_email', ['email']),
+
+  questionnaires: defineTable(questionnaireFields)
+    .index('by_app_id', ['id'])
+    .index('by_group', ['groupId'])
+    .index('by_owner', ['ownerId']),
 
   responses: defineTable(responseFields)
     .index('by_app_id', ['id'])

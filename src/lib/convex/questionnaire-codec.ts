@@ -1,5 +1,12 @@
-import { defaultChoiceOptions, text } from '#/lib/questionnaire/factory'
-import type { LocalizedText, Question, Questionnaire } from '#/lib/questionnaire/types'
+import { defaultChoiceOptions, defaultPrompt, text } from '#/lib/questionnaire/factory'
+import type {
+  ChoiceLayout,
+  ChoiceOption,
+  ChoicePrompt,
+  LocalizedText,
+  Question,
+  Questionnaire,
+} from '#/lib/questionnaire/types'
 import { stripSystemFields, stripSystemFieldsAll } from './rows'
 
 /**
@@ -29,22 +36,49 @@ function fromPairs<T>(pairs: Pair<T>[] | Record<string, T> | undefined): Record<
   return Object.fromEntries(pairs.map(({ key, value }) => [key, value]))
 }
 
+/**
+ * Rows saved before a block could ask several questions hold one `prompt`
+ * and, for the profile layout, its `choiceOptions`. They become one prompt
+ * with the same wording and answers.
+ */
+function legacyPrompts(question: Record<string, unknown>, layout: ChoiceLayout): ChoicePrompt[] {
+  const prompt = defaultPrompt(layout)
+  const wording = question.prompt as LocalizedText | undefined
+  const options = question.choiceOptions as ChoiceOption[] | undefined
+  return [
+    {
+      ...prompt,
+      text: wording ?? prompt.text,
+      options: options && options.length > 0 ? options : defaultChoiceOptions(),
+    },
+  ]
+}
+
 /** Fields added to choice experiments after the first surveys were saved. */
 function choiceDefaults(question: Record<string, unknown>) {
+  const layout = (question.layout as ChoiceLayout | undefined) ?? 'alternatives'
+  const prompts = question.prompts as ChoicePrompt[] | undefined
   return {
-    layout: question.layout ?? 'alternatives',
+    layout,
     attributeHeader: question.attributeHeader ?? text('Attributes', 'বৈশিষ্ট্যসমূহ'),
     referenceColumns: question.referenceColumns ?? [],
-    choiceOptions: question.choiceOptions ?? defaultChoiceOptions(),
     drawMode: question.drawMode ?? 'random',
+    prompts: prompts && prompts.length > 0 ? prompts : legacyPrompts(question, layout),
   }
+}
+
+/** The single-prompt fields of older rows, which the app no longer carries. */
+function withoutLegacyFields(question: Record<string, unknown>): Record<string, unknown> {
+  const { prompt: _prompt, choiceOptions: _options, ...rest } = question
+  return rest
 }
 
 function encodeQuestion(question: Question): unknown {
   if (question.type !== 'choice_experiment') return question
+  const raw = question as unknown as Record<string, unknown>
   return {
-    ...question,
-    ...choiceDefaults(question as unknown as Record<string, unknown>),
+    ...withoutLegacyFields(raw),
+    ...choiceDefaults(raw),
     levelLabels: toPairs(question.levelLabels),
     cards: question.cards.map((card) => ({ set: card.set, levels: toPairs(card.levels) })),
   }
@@ -54,7 +88,7 @@ function decodeQuestion(question: Record<string, unknown>): Question {
   if (question.type !== 'choice_experiment') return question as unknown as Question
   const cards = (question.cards as { set: number; levels: unknown }[]) ?? []
   return {
-    ...question,
+    ...withoutLegacyFields(question),
     ...choiceDefaults(question),
     levelLabels: fromPairs(question.levelLabels as Pair<LocalizedText>[]),
     cards: cards.map((card) => ({

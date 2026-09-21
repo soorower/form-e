@@ -17,6 +17,12 @@ import { cn } from '#/lib/utils'
 interface TeamChatProps {
   questionnaire: Questionnaire
   now: number
+  /**
+   * The signed-in person's name. When given, messages are sent as them and
+   * the name picker is not shown; otherwise the device's remembered
+   * enumerator name is used, as on a shared tablet.
+   */
+  author?: string
 }
 
 /**
@@ -24,7 +30,7 @@ interface TeamChatProps {
  * tablet appears on every other device subscribed to the same survey.
  * Messages are grouped by day; your own appear on the right.
  */
-export function TeamChat({ questionnaire, now }: TeamChatProps) {
+export function TeamChat({ questionnaire, now, author: fixedAuthor }: TeamChatProps) {
   const ready = useConvexReady()
   const messages = useQuery(
     api.messages.list,
@@ -46,7 +52,8 @@ export function TeamChat({ questionnaire, now }: TeamChatProps) {
     if (list) list.scrollTop = list.scrollHeight
   }, [messages?.length])
 
-  const author = members.length > 0 ? (members.includes(me) ? me : '') : me.trim()
+  const author =
+    fixedAuthor?.trim() || (members.length > 0 ? (members.includes(me) ? me : '') : me.trim())
 
   function changeMe(name: string) {
     setMe(name)
@@ -139,7 +146,9 @@ export function TeamChat({ questionnaire, now }: TeamChatProps) {
       <form onSubmit={submit} className="space-y-2 border-t border-border p-3">
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           <span>Sending as</span>
-          {members.length > 0 ? (
+          {fixedAuthor?.trim() ? (
+            <span className="font-semibold text-foreground">{author}</span>
+          ) : members.length > 0 ? (
             <Select
               value={members.includes(me) ? me : null}
               onValueChange={(name) => changeMe(name ?? '')}

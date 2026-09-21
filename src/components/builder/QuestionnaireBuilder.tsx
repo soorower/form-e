@@ -1,9 +1,13 @@
+import { Fragment } from 'react'
 import { ClipboardList } from 'lucide-react'
+import { insertAt, moveItem } from '#/lib/list'
 import { createQuestion, duplicateQuestion } from '#/lib/questionnaire/factory'
 import type { Question, QuestionType, Questionnaire } from '#/lib/questionnaire/types'
 import { FormSettings } from './FormSettings'
+import { InsertQuestion } from './InsertQuestion'
 import { QuestionCard } from './QuestionCard'
 import { QuestionPalette } from './QuestionPalette'
+import { SortableItem, SortableList } from './SortableList'
 
 type Updater = (current: Questionnaire) => Questionnaire
 
@@ -21,6 +25,10 @@ export function QuestionnaireBuilder({ questionnaire, onUpdate }: QuestionnaireB
   const addQuestion = (type: QuestionType) =>
     setQuestions((list) => [...list, createQuestion(type)])
 
+  /** Places a new question at `index`, pushing the questions from there on down one. */
+  const insertQuestion = (type: QuestionType, index: number) =>
+    setQuestions((list) => insertAt(list, index, createQuestion(type)))
+
   const changeQuestion = (next: Question) =>
     setQuestions((list) => list.map((q) => (q.id === next.id ? next : q)))
 
@@ -30,22 +38,16 @@ export function QuestionnaireBuilder({ questionnaire, onUpdate }: QuestionnaireB
   const duplicate = (id: string) =>
     setQuestions((list) => {
       const index = list.findIndex((q) => q.id === id)
-      if (index === -1) return list
-      const next = [...list]
-      next.splice(index + 1, 0, duplicateQuestion(list[index]))
-      return next
+      return index === -1 ? list : insertAt(list, index + 1, duplicateQuestion(list[index]))
     })
 
   const move = (id: string, direction: -1 | 1) =>
     setQuestions((list) => {
       const from = list.findIndex((q) => q.id === id)
-      const to = from + direction
-      if (from === -1 || to < 0 || to >= list.length) return list
-      const next = [...list]
-      const [item] = next.splice(from, 1)
-      next.splice(to, 0, item)
-      return next
+      return from === -1 ? list : moveItem(list, from, from + direction)
     })
+
+  const moveTo = (from: number, to: number) => setQuestions((list) => moveItem(list, from, to))
 
   return (
     <div className="grid gap-6 lg:grid-cols-[17rem_minmax(0,1fr)] lg:items-start">
@@ -68,19 +70,36 @@ export function QuestionnaireBuilder({ questionnaire, onUpdate }: QuestionnaireB
             </p>
           </div>
         ) : (
-          questions.map((question, index) => (
-            <QuestionCard
-              key={question.id}
-              question={question}
-              index={index}
-              total={questions.length}
-              languages={languages}
-              onChange={changeQuestion}
-              onMove={(direction) => move(question.id, direction)}
-              onDuplicate={() => duplicate(question.id)}
-              onDelete={() => removeQuestion(question.id)}
+          <SortableList ids={questions.map((question) => question.id)} onMove={moveTo} className="space-y-2">
+            <InsertQuestion
+              label="Insert a question at the top"
+              onInsert={(type) => insertQuestion(type, 0)}
             />
-          ))
+            {questions.map((question, index) => (
+              <Fragment key={question.id}>
+                <SortableItem id={question.id}>
+                  {(handle, dragging) => (
+                    <QuestionCard
+                      question={question}
+                      index={index}
+                      total={questions.length}
+                      languages={languages}
+                      handle={handle}
+                      dragging={dragging}
+                      onChange={changeQuestion}
+                      onMove={(direction) => move(question.id, direction)}
+                      onDuplicate={() => duplicate(question.id)}
+                      onDelete={() => removeQuestion(question.id)}
+                    />
+                  )}
+                </SortableItem>
+                <InsertQuestion
+                  label={`Insert a question after question ${index + 1}`}
+                  onInsert={(type) => insertQuestion(type, index + 1)}
+                />
+              </Fragment>
+            ))}
+          </SortableList>
         )}
       </div>
     </div>

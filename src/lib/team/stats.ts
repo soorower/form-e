@@ -1,8 +1,24 @@
 import { activeEnumerators } from '#/lib/questionnaire/factory'
-import type { Questionnaire, SurveyResponse } from '#/lib/questionnaire/types'
+import type { Questionnaire } from '#/lib/questionnaire/types'
+
+/** What the stats need of a response: who collected it and when. */
+export interface ProgressRow {
+  enumerator: string
+  submittedAt: number
+  /** The surveyor's code when a signed-in surveyor collected it. */
+  surveyorCode?: string | null
+}
+
+/** A surveyor account on the team, listed even before their first response. */
+export interface TeamMember {
+  name: string
+  code?: string | null
+}
 
 export interface MemberStat {
   name: string
+  /** The surveyor's code (e.g. S01) when known, else null. */
+  code: string | null
   /** Position in the leaderboard, from 1. Members with equal totals share a rank. */
   rank: number
   total: number
@@ -30,28 +46,45 @@ export function startOfToday(now = Date.now()): number {
   return date.getTime()
 }
 
+interface Tally {
+  code: string | null
+  total: number
+  today: number
+  lastAt: number | null
+}
+
 /**
  * Responses per team member, ranked by total. Every listed team member
- * appears even with no responses; names that only occur in responses (for
- * example typed on a tablet) are included too.
+ * (names from the questionnaire, plus `assigned` surveyor accounts) appears
+ * even with no responses; names that only occur in responses (for example
+ * typed on a tablet) are included too.
  */
 export function memberStats(
   questionnaire: Pick<Questionnaire, 'enumerators'>,
-  responses: SurveyResponse[],
+  responses: ProgressRow[],
   now = Date.now(),
+  assigned: TeamMember[] = [],
 ): MemberStat[] {
   const dayStart = startOfToday(now)
-  const byName = new Map<string, { total: number; today: number; lastAt: number | null }>()
-  for (const name of activeEnumerators(questionnaire)) {
-    byName.set(name, { total: 0, today: 0, lastAt: null })
+  const byName = new Map<string, Tally>()
+  const tally = (name: string): Tally => {
+    const entry = byName.get(name) ?? { code: null, total: 0, today: 0, lastAt: null }
+    byName.set(name, entry)
+    return entry
+  }
+  for (const name of activeEnumerators(questionnaire)) tally(name)
+  for (const member of assigned) {
+    const name = member.name.trim()
+    if (!name) continue
+    const entry = tally(name)
+    entry.code = member.code ?? entry.code
   }
   for (const response of responses) {
-    const name = response.enumerator.trim() || UNNAMED
-    const entry = byName.get(name) ?? { total: 0, today: 0, lastAt: null }
+    const entry = tally(response.enumerator.trim() || UNNAMED)
     entry.total += 1
     if (response.submittedAt >= dayStart) entry.today += 1
     entry.lastAt = Math.max(entry.lastAt ?? 0, response.submittedAt)
-    byName.set(name, entry)
+    entry.code = entry.code ?? response.surveyorCode ?? null
   }
 
   const teamTotal = responses.length
@@ -70,6 +103,7 @@ export function memberStats(
     }
     return {
       name,
+      code: entry.code,
       rank,
       total: entry.total,
       today: entry.today,
@@ -81,10 +115,11 @@ export function memberStats(
 
 export function teamStats(
   questionnaire: Pick<Questionnaire, 'enumerators' | 'responseTarget'>,
-  responses: SurveyResponse[],
+  responses: ProgressRow[],
   now = Date.now(),
+  assigned: TeamMember[] = [],
 ): TeamStat {
-  const members = memberStats(questionnaire, responses, now)
+  const members = memberStats(questionnaire, responses, now, assigned)
   const total = responses.length
   const today = members.reduce((sum, member) => sum + member.today, 0)
   const target = Math.max(0, questionnaire.responseTarget)

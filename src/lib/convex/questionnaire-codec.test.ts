@@ -29,13 +29,51 @@ describe('choice experiment defaults', () => {
     expect(block.layout).toBe('alternatives')
     expect(block.drawMode).toBe('random')
     expect(block.referenceColumns).toEqual([])
-    expect(block.choiceOptions.map((option) => option.key)).toEqual(['yes', 'no'])
     expect(block.attributeHeader.en).toBe('Attributes')
+    // The single `prompt` of an older row becomes the block's one question.
+    expect(block.prompts).toHaveLength(1)
+    expect(block.prompts[0].answer).toBe('alternative')
+    expect(block.prompts[0].options.map((option) => option.key)).toEqual(['yes', 'no'])
+    expect(block).not.toHaveProperty('prompt')
+    expect(block).not.toHaveProperty('choiceOptions')
 
     const encoded = encodeQuestionnaire(decoded) as { questions: Record<string, unknown>[] }
-    for (const field of ['layout', 'attributeHeader', 'referenceColumns', 'choiceOptions', 'drawMode']) {
+    for (const field of ['layout', 'attributeHeader', 'referenceColumns', 'prompts', 'drawMode']) {
       expect(encoded.questions[0]).toHaveProperty(field)
     }
+    expect(encoded.questions[0]).not.toHaveProperty('prompt')
+  })
+
+  it('turns an older profile row with its own prompt wording and Yes / No options into one options prompt', () => {
+    const raw = {
+      ...createQuestionnaire(),
+      questions: [
+        {
+          id: 'q',
+          type: 'choice_experiment',
+          label: text(),
+          help: text(),
+          required: true,
+          layout: 'profile',
+          alternatives: [{ key: 'A', label: text('Proposed mall') }],
+          attributes: [],
+          cards: [],
+          levelLabels: [],
+          scenariosPerRespondent: 2,
+          prompt: text('Would you shop here?', 'আপনি কি এখানে কেনাকাটা করবেন?'),
+          choiceOptions: [
+            { key: 'yes', label: text('Yes', 'হ্যাঁ') },
+            { key: 'maybe', label: text('Maybe', 'হয়তো') },
+          ],
+        },
+      ],
+    }
+    const block = (decodeQuestionnaire(raw) as Questionnaire).questions[0] as ChoiceExperimentQuestion
+    expect(block.prompts).toHaveLength(1)
+    expect(block.prompts[0].answer).toBe('options')
+    expect(block.prompts[0].text.en).toBe('Would you shop here?')
+    expect(block.prompts[0].options.map((option) => option.key)).toEqual(['yes', 'maybe'])
+    expect(block.prompts[0].allowOther).toBe(false)
   })
 })
 

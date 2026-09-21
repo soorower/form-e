@@ -28,8 +28,15 @@ interface ResponsesPanelProps {
 }
 
 const PREVIEW_ROWS = 25
+const LATEST_COUNT = 10
 
-/** Response count, downloads, and a preview of the flattened export table. */
+/**
+ * Response count, downloads, the latest submissions, and a preview of the
+ * flattened export table. The downloads keep responses in survey-number
+ * order; the preview shows the newest first, since a choice-experiment
+ * survey turns every response into several rows and the latest one would
+ * otherwise sit far below the fold.
+ */
 export function ResponsesPanel({ questionnaire }: ResponsesPanelProps) {
   const ready = useConvexReady()
   const responses = stripSystemFieldsAll<SurveyResponse>(
@@ -41,12 +48,19 @@ export function ResponsesPanel({ questionnaire }: ResponsesPanelProps) {
   const [lang, setLang] = useState<Lang>(() => defaultExportLanguage(questionnaire))
   const [building, setBuilding] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
+  const [previewLimit, setPreviewLimit] = useState(PREVIEW_ROWS)
+  const [showAllLatest, setShowAllLatest] = useState(false)
 
   if (responses === undefined) {
     return <p className="text-muted-foreground">Loading…</p>
   }
 
   const rows = responsesToRows(questionnaire, responses, lang)
+  const newestFirst = [...responses].sort(
+    (a, b) => b.submittedAt - a.submittedAt || b.serial - a.serial,
+  )
+  const previewRows = responsesToRows(questionnaire, newestFirst, lang)
+  const latest = showAllLatest ? newestFirst : newestFirst.slice(0, LATEST_COUNT)
   const byEnumerator = [...responses.reduce((counts, response) => {
     const name = response.enumerator.trim() || '(no name)'
     return counts.set(name, (counts.get(name) ?? 0) + 1)
@@ -168,35 +182,111 @@ export function ResponsesPanel({ questionnaire }: ResponsesPanelProps) {
             </p>
           </div>
         ) : (
-          <div className="max-h-[32rem] overflow-auto rounded-lg border border-border">
-            <Table className="text-xs">
-              <TableHeader className="sticky top-0 bg-card">
-                <TableRow className="hover:bg-transparent">
-                  {columns.map((column) => (
-                    <TableHead key={column} className="h-8">
-                      {column}
-                    </TableHead>
-                  ))}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rows.slice(0, PREVIEW_ROWS).map((row, index) => (
-                  <TableRow key={index} className="hover:bg-transparent">
-                    {columns.map((column) => (
-                      <TableCell key={column} className="max-w-64 truncate py-1" title={String(row[column] ?? '')}>
-                        {String(row[column] ?? '').replace(/\n/g, ' | ')}
-                      </TableCell>
+          <>
+            <div className="space-y-1.5">
+              <p className="text-xs font-medium text-muted-foreground">Latest submissions</p>
+              <div className="overflow-x-auto rounded-lg border border-border">
+                <Table className="text-xs">
+                  <TableHeader>
+                    <TableRow className="hover:bg-transparent">
+                      <TableHead className="h-8">Survey no.</TableHead>
+                      <TableHead className="h-8">Enumerator</TableHead>
+                      <TableHead className="h-8">Submitted</TableHead>
+                      <TableHead className="h-8">Language</TableHead>
+                      <TableHead className="h-8 text-right">Answered</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {latest.map((response) => (
+                      <TableRow key={response.id} className="hover:bg-transparent">
+                        <TableCell className="py-1 font-mono font-semibold">
+                          {response.surveyNumber || `#${response.serial}`}
+                        </TableCell>
+                        <TableCell className="py-1">
+                          {response.enumerator.trim() || '(no name)'}
+                          {response.surveyorCode && (
+                            <span className="ml-1.5 rounded bg-muted px-1 font-mono text-[10px] text-muted-foreground">
+                              {response.surveyorCode}
+                            </span>
+                          )}
+                        </TableCell>
+                        <TableCell className="py-1 text-muted-foreground">
+                          {new Date(response.submittedAt).toLocaleString()}
+                        </TableCell>
+                        <TableCell className="py-1">{LANGUAGE_LABELS[response.language]}</TableCell>
+                        <TableCell className="py-1 text-right tabular-nums">
+                          {Object.keys(response.answers).length} / {questionnaire.questions.length}
+                        </TableCell>
+                      </TableRow>
                     ))}
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-            {rows.length > PREVIEW_ROWS && (
-              <p className="border-t border-border px-3 py-2 text-xs text-muted-foreground">
-                Showing the first {PREVIEW_ROWS} of {rows.length} rows. The download has all of them.
+                  </TableBody>
+                </Table>
+                {newestFirst.length > LATEST_COUNT && (
+                  <div className="border-t border-border px-3 py-1.5 text-xs text-muted-foreground">
+                    <button
+                      type="button"
+                      className="font-medium text-primary underline-offset-4 hover:underline"
+                      onClick={() => setShowAllLatest((open) => !open)}
+                    >
+                      {showAllLatest ? `Show the latest ${LATEST_COUNT} only` : `Show all ${newestFirst.length} submissions`}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <p className="text-xs font-medium text-muted-foreground">
+                Export preview, newest response first
               </p>
-            )}
-          </div>
+              <div className="max-h-[32rem] overflow-auto rounded-lg border border-border">
+                <Table className="text-xs">
+                  <TableHeader className="sticky top-0 bg-card">
+                    <TableRow className="hover:bg-transparent">
+                      {columns.map((column) => (
+                        <TableHead key={column} className="h-8">
+                          {column}
+                        </TableHead>
+                      ))}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {previewRows.slice(0, previewLimit).map((row, index) => (
+                      <TableRow key={index} className="hover:bg-transparent">
+                        {columns.map((column) => (
+                          <TableCell key={column} className="max-w-64 truncate py-1" title={String(row[column] ?? '')}>
+                            {String(row[column] ?? '').replace(/\n/g, ' | ')}
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+                {previewRows.length > previewLimit && (
+                  <div className="flex flex-wrap items-center gap-3 border-t border-border px-3 py-2 text-xs text-muted-foreground">
+                    <span>
+                      Showing the newest {previewLimit} of {previewRows.length} rows. The download has
+                      all of them, in survey-number order.
+                    </span>
+                    <button
+                      type="button"
+                      className="font-medium text-primary underline-offset-4 hover:underline"
+                      onClick={() => setPreviewLimit((limit) => limit + PREVIEW_ROWS)}
+                    >
+                      Show {PREVIEW_ROWS} more
+                    </button>
+                    <button
+                      type="button"
+                      className="font-medium text-primary underline-offset-4 hover:underline"
+                      onClick={() => setPreviewLimit(previewRows.length)}
+                    >
+                      Show all
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </>
         )}
       </CardContent>
     </Card>

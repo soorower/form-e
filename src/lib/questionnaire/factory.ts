@@ -1,5 +1,9 @@
 import type {
+  ChoiceExperimentQuestion,
+  ChoiceLayout,
   ChoiceOption,
+  ChoicePrompt,
+  ChoicePromptAnswer,
   Lang,
   LocalizedText,
   Option,
@@ -97,14 +101,25 @@ export const QUESTION_TYPES: QuestionTypeMeta[] = [
 ]
 
 /**
+ * How many question numbers a choice block takes: one per prompt per
+ * scenario, so three scenarios that each ask three questions span nine.
+ */
+export function blockQuestionCount(
+  question: Pick<ChoiceExperimentQuestion, 'scenariosPerRespondent' | 'prompts'>,
+): number {
+  return question.scenariosPerRespondent * Math.max(1, question.prompts.length)
+}
+
+/**
  * Question numbers as respondents see them. A choice experiment block spans
- * one number per scenario, so the questions after it keep counting up.
+ * one number per question asked under every scenario, so the questions after
+ * it keep counting up.
  */
 export function questionNumbers(questions: Question[]): number[] {
   let next = 1
   return questions.map((question) => {
     const start = next
-    next += question.type === 'choice_experiment' ? question.scenariosPerRespondent : 1
+    next += question.type === 'choice_experiment' ? blockQuestionCount(question) : 1
     return start
   })
 }
@@ -155,15 +170,11 @@ export function createQuestion(type: QuestionType): Question {
         alternatives: [],
         attributes: [],
         referenceColumns: [],
-        choiceOptions: defaultChoiceOptions(),
         drawMode: 'random',
         cards: [],
         levelLabels: {},
         scenariosPerRespondent: 3,
-        prompt: text(
-          'Which option would you choose for this trip?',
-          'এই যাত্রার জন্য আপনি কোন বিকল্পটি বেছে নেবেন?',
-        ),
+        prompts: [defaultPrompt('alternatives')],
       }
   }
 }
@@ -174,6 +185,25 @@ export function defaultChoiceOptions(): ChoiceOption[] {
     { key: 'yes', label: text('Yes', 'হ্যাঁ') },
     { key: 'no', label: text('No', 'না') },
   ]
+}
+
+/** A question under a scenario table, answered with the table's columns unless told otherwise. */
+export function createPrompt(
+  answer: ChoicePromptAnswer = 'alternative',
+  wording: LocalizedText = text(),
+): ChoicePrompt {
+  return { key: uid(), text: wording, answer, options: defaultChoiceOptions(), allowOther: false }
+}
+
+/**
+ * The single prompt a new block starts with: pick a column in the
+ * alternatives layout, answer Yes / No to the one card in the profile layout.
+ */
+export function defaultPrompt(layout: ChoiceLayout): ChoicePrompt {
+  return createPrompt(
+    layout === 'profile' ? 'options' : 'alternative',
+    text('Which option would you choose for this trip?', 'এই যাত্রার জন্য আপনি কোন বিকল্পটি বেছে নেবেন?'),
+  )
 }
 
 /** Deep copy with fresh ids so the copy can live alongside the original. */
