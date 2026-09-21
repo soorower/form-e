@@ -12,6 +12,7 @@ import {
   columnKey,
   drawScenarios,
   levelLabel,
+  scenariosFromSets,
   type CardExposure,
 } from '#/lib/questionnaire/cards'
 import { formatNumber, pickText } from '#/lib/questionnaire/factory'
@@ -42,6 +43,12 @@ interface ChoiceExperimentFieldProps {
    * than drawing blind.
    */
   exposure?: CardExposure
+  /**
+   * The cards the server handed this interview (set numbers, in order). A
+   * balanced block shows these and only draws for itself, from `exposure`,
+   * when there are none.
+   */
+  assignedSets?: number[]
 }
 
 /**
@@ -63,16 +70,20 @@ export function ChoiceExperimentField({
   invalid,
   domId,
   exposure,
+  assignedSets,
 }: ChoiceExperimentFieldProps) {
   const answer = isChoiceExperimentAnswer(value) ? value : null
   const hasCards = question.cards.length > 0
-  const canDraw = question.drawMode !== 'balanced' || exposure !== undefined
+  const balanced = question.drawMode === 'balanced'
+  const canDraw = !balanced || assignedSets !== undefined || exposure !== undefined
 
   useEffect(() => {
-    if (!answer && hasCards && canDraw) {
-      onChange({ scenarios: drawScenarios(question, undefined, exposure) })
-    }
-  }, [answer, hasCards, canDraw, question, exposure, onChange])
+    if (answer || !hasCards || !canDraw) return
+    const assigned = balanced && assignedSets ? scenariosFromSets(question, assignedSets) : []
+    onChange({
+      scenarios: assigned.length > 0 ? assigned : drawScenarios(question, undefined, exposure),
+    })
+  }, [answer, hasCards, canDraw, balanced, question, exposure, assignedSets, onChange])
 
   const t = (en: string, bn: string) => (lang === 'bn' ? bn : en)
   const title = pickText(question.label, lang)

@@ -241,7 +241,8 @@ export function FormSettings({ questionnaire, onChange }: FormSettingsProps) {
                 className="w-40"
               />
               <p className="text-xs text-muted-foreground">
-                Total responses the team is aiming for. Leave empty for no target.
+                Total responses the survey is after. Choice-experiment blocks share their cards
+                out over this many responses. Leave empty for no target.
               </p>
             </div>
           </div>
@@ -257,7 +258,8 @@ export function FormSettings({ questionnaire, onChange }: FormSettingsProps) {
               spellCheck={false}
             />
             <p className="text-xs text-muted-foreground">
-              Every response gets the next number on the tablet that collected it:{' '}
+              Every response gets the survey&apos;s next number when it is saved, counted across
+              all tablets:{' '}
               <span className="font-mono">
                 {formatSurveyNumber(questionnaire.surveyCodePrefix, 1)}
               </span>

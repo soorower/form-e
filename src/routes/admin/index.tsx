@@ -108,6 +108,40 @@ function CodeField({
   )
 }
 
+/** A survey's total response target, saved when editing settles; empty = no target. */
+function TargetField({
+  value,
+  label,
+  onSave,
+}: {
+  value: number
+  label: string
+  onSave: (responseTarget: number) => void
+}) {
+  const [draft, setDraft] = useState(value ? String(value) : '')
+  useEffect(() => setDraft(value ? String(value) : ''), [value])
+  function save() {
+    const next = Math.max(0, Math.floor(Number(draft) || 0))
+    if (next !== value) onSave(next)
+    else setDraft(value ? String(value) : '')
+  }
+  return (
+    <Input
+      type="number"
+      min={0}
+      value={draft}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={save}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') event.currentTarget.blur()
+      }}
+      aria-label={label}
+      placeholder="None"
+      className="h-8 w-24 tabular-nums"
+    />
+  )
+}
+
 function errorText(error: unknown): string {
   if (error instanceof ConvexError && typeof error.data === 'string') return error.data
   return error instanceof Error ? error.message : 'Something went wrong.'
@@ -847,6 +881,7 @@ function SurveysTab({
 }) {
   const assign = useMutation(api.admin.assignSurvey)
   const assignOwner = useMutation(api.admin.assignOwner)
+  const setTarget = useMutation(api.admin.setResponseTarget)
   const assignSurveyor = useMutation(api.teams.assign)
   const unassignSurveyor = useMutation(api.teams.unassign)
   const { error, run } = useAction()
@@ -876,7 +911,9 @@ function SurveysTab({
           Every survey: its owner, the group that shares it, and the surveyors who fill it. The
           owner and the group's builders can edit the survey and see its responses; a survey with
           neither is visible to admins only, so hand older surveys to a builder here. Putting a
-          surveyor on a survey is what makes it appear on their "My surveys" page.
+          surveyor on a survey is what makes it appear on their "My surveys" page. The target is
+          the total number of responses the survey is after; a survey with design cards shares
+          them out evenly over that many responses.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -893,6 +930,7 @@ function SurveysTab({
                   <TableHead>Team</TableHead>
                   <TableHead>Group</TableHead>
                   <TableHead>Surveyors</TableHead>
+                  <TableHead>Target</TableHead>
                   <TableHead className="text-right">Responses</TableHead>
                   <TableHead className="w-24" />
                 </TableRow>
@@ -1046,6 +1084,15 @@ function SurveysTab({
                             )
                           })()}
                         </div>
+                      </TableCell>
+                      <TableCell>
+                        <TargetField
+                          value={survey.responseTarget}
+                          label={`Survey target for ${title}`}
+                          onSave={(responseTarget) =>
+                            void run(setTarget({ questionnaireId: survey.id, responseTarget }))
+                          }
+                        />
                       </TableCell>
                       <TableCell className="text-right tabular-nums">{survey.responseCount}</TableCell>
                       <TableCell className="text-right">

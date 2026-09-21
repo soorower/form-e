@@ -197,7 +197,46 @@ export function toCsv(columns: string[], rows: ExportRow[]): string {
   return `﻿${lines.join('\r\n')}\r\n`
 }
 
-export function exportFileName(questionnaire: Questionnaire, extension: string): string {
+/**
+ * The name responses are grouped under on the Responses tab: trimmed, and ''
+ * when the tablet recorded none (shown as "(no name)").
+ */
+export function enumeratorKey(response: Pick<SurveyResponse, 'enumerator'>): string {
+  return response.enumerator.trim()
+}
+
+/** How many responses each enumerator collected, the most first. */
+export function countByEnumerator(
+  responses: Pick<SurveyResponse, 'enumerator'>[],
+): [enumerator: string, count: number][] {
+  const counts = new Map<string, number>()
+  for (const response of responses) {
+    const key = enumeratorKey(response)
+    counts.set(key, (counts.get(key) ?? 0) + 1)
+  }
+  return [...counts].sort((a, b) => b[1] - a[1])
+}
+
+/** One enumerator's responses, or all of them when `enumerator` is null. */
+export function filterByEnumerator<T extends Pick<SurveyResponse, 'enumerator'>>(
+  responses: T[],
+  enumerator: string | null,
+): T[] {
+  return enumerator === null
+    ? responses
+    : responses.filter((response) => enumeratorKey(response) === enumerator)
+}
+
+/**
+ * `enumerator` names the one person a filtered download holds ('' for the
+ * responses without a name), so the file cannot pass for the whole survey.
+ * Names keep their own script; only what a file name cannot hold is dropped.
+ */
+export function exportFileName(
+  questionnaire: Questionnaire,
+  extension: string,
+  enumerator: string | null = null,
+): string {
   const title = pickText(questionnaire.title, 'en') || 'survey'
   const slug = title
     .normalize('NFKD')
@@ -206,7 +245,16 @@ export function exportFileName(questionnaire: Questionnaire, extension: string):
     .replace(/\s+/g, '-')
     .toLowerCase()
   const date = new Date().toISOString().slice(0, 10)
-  return `${slug || 'survey'}-responses-${date}.${extension}`
+  const who =
+    enumerator === null
+      ? ''
+      : `-${
+          enumerator
+            .replace(/[\\/:*?"<>|.\s]+/g, '-')
+            .replace(/^-+|-+$/g, '')
+            .toLowerCase() || 'no-name'
+        }`
+  return `${slug || 'survey'}-responses${who}-${date}.${extension}`
 }
 
 export function downloadText(fileName: string, content: string, mimeType: string) {

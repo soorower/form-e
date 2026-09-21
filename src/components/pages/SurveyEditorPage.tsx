@@ -1,6 +1,8 @@
 import { Link } from '@tanstack/react-router'
 import { useState } from 'react'
+import { useQuery } from 'convex/react'
 import { ArrowLeft, Eye, Inbox, MessageSquare, Pencil, Users } from 'lucide-react'
+import { api } from '../../../convex/_generated/api'
 import { useSurveyPaths } from '#/components/auth/area'
 import { QuestionnaireBuilder } from '#/components/builder/QuestionnaireBuilder'
 import { QuestionnaireRenderer } from '#/components/renderer/QuestionnaireRenderer'
@@ -8,12 +10,18 @@ import { ResponsesPanel } from '#/components/responses/ResponsesPanel'
 import { Button } from '#/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '#/components/ui/tabs'
 import { useQuestionnaire } from '#/hooks/useQuestionnaire'
+import { useConvexReady } from '#/lib/convex/hooks'
 import { activeEnumerators, formatSurveyNumber, pickText } from '#/lib/questionnaire/factory'
 
 /** Build, preview, and responses tabs for one survey. */
 export function SurveyEditorPage({ surveyId }: { surveyId: string }) {
   const paths = useSurveyPaths()
+  const ready = useConvexReady()
   const { questionnaire, update, savedAt, saveError } = useQuestionnaire(surveyId)
+  // The number the next real response will get, so the preview shows what the
+  // tablet will show. It was a fixed 1, which read as "numbering starts over".
+  const nextSerial =
+    useQuery(api.responses.nextSerial, ready ? { questionnaireId: surveyId } : 'skip') ?? 1
   const [tab, setTab] = useState('build')
 
   if (questionnaire === undefined) {
@@ -106,14 +114,30 @@ export function SurveyEditorPage({ surveyId }: { surveyId: string }) {
           <QuestionnaireBuilder questionnaire={questionnaire} onUpdate={update} />
         </TabsContent>
         <TabsContent value="preview" className="pt-4">
-          <p className="mb-4 text-center text-sm text-muted-foreground">
-            Preview only. Answers entered here are not recorded.
-          </p>
+          <div
+            role="note"
+            className="mx-auto mb-4 flex w-full max-w-3xl flex-wrap items-center justify-center gap-x-4 gap-y-2 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-center text-sm text-amber-700 dark:text-amber-300"
+          >
+            <p>
+              <span className="font-semibold">Preview only: nothing entered here is saved.</span>{' '}
+              The survey number is the one the next real response will get. To record responses,
+              open the survey for respondents.
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              nativeButton={false}
+              render={<Link to={paths.fill} params={{ surveyId }} />}
+            >
+              <Eye data-icon="inline-start" />
+              Open for respondents
+            </Button>
+          </div>
           <QuestionnaireRenderer
             questionnaire={questionnaire}
             meta={{
-              serial: 1,
-              surveyNumber: formatSurveyNumber(questionnaire.surveyCodePrefix, 1),
+              serial: nextSerial,
+              surveyNumber: formatSurveyNumber(questionnaire.surveyCodePrefix, nextSerial),
               enumerator: activeEnumerators(questionnaire)[0] ?? '',
             }}
             cardExposure={{}}

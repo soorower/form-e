@@ -29,6 +29,8 @@ interface QuestionFieldProps {
   invalid: boolean
   /** Card exposure counts for a choice experiment; see ChoiceExperimentField. */
   exposure?: CardExposure
+  /** Cards the server handed this interview for a balanced choice experiment. */
+  assignedSets?: number[]
 }
 
 export function questionDomId(id: string) {
@@ -45,6 +47,7 @@ export function QuestionField({
   onChange,
   invalid,
   exposure,
+  assignedSets,
 }: QuestionFieldProps) {
   if (question.type === 'choice_experiment') {
     return (
@@ -57,6 +60,7 @@ export function QuestionField({
         invalid={invalid}
         domId={questionDomId(question.id)}
         exposure={exposure}
+        assignedSets={assignedSets}
       />
     )
   }

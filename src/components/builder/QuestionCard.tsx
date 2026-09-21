@@ -15,6 +15,7 @@ import { questionTypeLabel } from '#/lib/questionnaire/factory'
 import { FORM_TEXT_DEFAULTS } from '#/lib/questionnaire/text-style'
 import type { Lang, Question } from '#/lib/questionnaire/types'
 import { cn } from '#/lib/utils'
+import type { SurveyTarget } from './CardDistribution'
 import { ChoiceExperimentEditor } from './ChoiceExperimentEditor'
 import { LocalizedInput } from './LocalizedInput'
 import { OptionsEditor } from './OptionsEditor'
@@ -27,6 +28,8 @@ interface QuestionCardProps {
   index: number
   total: number
   languages: Lang[]
+  /** The survey's fixed target, for the card plan of a choice experiment. */
+  survey?: SurveyTarget
   /** From the surrounding SortableItem; the card shows a grip when given one. */
   handle?: DragHandleProps
   dragging?: boolean
@@ -41,6 +44,7 @@ export function QuestionCard({
   index,
   total,
   languages,
+  survey,
   handle,
   dragging = false,
   onChange,
@@ -138,7 +142,7 @@ export function QuestionCard({
           />
         </div>
 
-        <TypeEditor question={question} languages={languages} onChange={onChange} />
+        <TypeEditor question={question} languages={languages} survey={survey} onChange={onChange} />
 
         <Label className="cursor-pointer gap-3 border-t border-border pt-4 font-normal">
           <Switch
@@ -155,10 +159,11 @@ export function QuestionCard({
 interface TypeEditorProps {
   question: Question
   languages: Lang[]
+  survey?: SurveyTarget
   onChange: (question: Question) => void
 }
 
-function TypeEditor({ question, languages, onChange }: TypeEditorProps) {
+function TypeEditor({ question, languages, survey, onChange }: TypeEditorProps) {
   switch (question.type) {
     case 'short_text':
     case 'long_text':
@@ -242,6 +247,7 @@ function TypeEditor({ question, languages, onChange }: TypeEditorProps) {
         <ChoiceExperimentEditor
           question={question}
           languages={languages}
+          survey={survey}
           onChange={(patch) => onChange({ ...question, ...patch })}
         />
       )

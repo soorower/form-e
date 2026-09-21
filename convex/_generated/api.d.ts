@@ -12,6 +12,7 @@ import type * as access from "../access.js";
 import type * as admin from "../admin.js";
 import type * as auth from "../auth.js";
 import type * as authRedirect from "../authRedirect.js";
+import type * as cardBalance from "../cardBalance.js";
 import type * as http from "../http.js";
 import type * as messages from "../messages.js";
 import type * as questionnaires from "../questionnaires.js";
@@ -31,6 +32,7 @@ declare const fullApi: ApiFromModules<{
   admin: typeof admin;
   auth: typeof auth;
   authRedirect: typeof authRedirect;
+  cardBalance: typeof cardBalance;
   http: typeof http;
   messages: typeof messages;
   questionnaires: typeof questionnaires;

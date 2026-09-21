@@ -71,7 +71,7 @@ export const save = mutation({
   },
 })
 
-/** Removes the questionnaire together with its responses and chat messages. */
+/** Removes the questionnaire together with its responses, card reservations, and chat messages. */
 export const remove = mutation({
   args: { id: v.string() },
   handler: async (ctx, { id }) => {
@@ -86,6 +86,12 @@ export const remove = mutation({
       .withIndex('by_questionnaire', (q) => q.eq('questionnaireId', id))
       .collect()
     for (const response of responses) await ctx.db.delete(response._id)
+
+    const draws = await ctx.db
+      .query('cardDraws')
+      .withIndex('by_questionnaire', (q) => q.eq('questionnaireId', id))
+      .collect()
+    for (const draw of draws) await ctx.db.delete(draw._id)
 
     const messages = await ctx.db
       .query('messages')

@@ -780,7 +780,7 @@ export interface AttributeSection {
  */
 export function attributeSections(attributes: ChoiceAttribute[]): AttributeSection[] {
   const identity = (group: LocalizedText | undefined) =>
-    group ? `${group.en.trim()} ${group.bn.trim()}`.replace(/^ $/, '') : ''
+    group ? `${group.en.trim()}\u0000${group.bn.trim()}`.replace(/^\u0000$/, '') : ''
   const sections: AttributeSection[] = []
   for (const attribute of attributes) {
     const last = sections.at(-1)
@@ -852,6 +852,47 @@ export function drawScenarios(
     levels: { ...card.levels },
     choice: '',
   }))
+}
+
+/**
+ * Scenarios for cards the server handed this interview (`responses.drawCards`),
+ * in the order given. A set number that is no longer among the block's cards
+ * (the design was re-imported meanwhile) is left out.
+ */
+export function scenariosFromSets(
+  question: Pick<ChoiceExperimentQuestion, 'cards'>,
+  sets: number[],
+): ChoiceScenarioAnswer[] {
+  const bySet = new Map(question.cards.map((card) => [card.set, card]))
+  return sets.flatMap((set) => {
+    const card = bySet.get(set)
+    return card ? [{ set: card.set, levels: { ...card.levels }, choice: '' }] : []
+  })
+}
+
+/** What a fixed survey target means for one block's cards. */
+export interface CardPlan {
+  /** Card showings in all: target × scenarios per respondent. */
+  showings: number
+  /** Every card is shown at least this often. */
+  perCard: number
+  /** This many cards are shown once more, when the showings do not divide evenly. */
+  extraCards: number
+}
+
+/**
+ * How often each card appears once `target` responses are in, shared as
+ * evenly as the numbers allow. Null without a target or without cards.
+ */
+export function cardPlan(
+  target: number,
+  question: Pick<ChoiceExperimentQuestion, 'cards' | 'scenariosPerRespondent'>,
+): CardPlan | null {
+  const cards = question.cards.length
+  if (!(target > 0) || cards === 0) return null
+  const perRespondent = Math.min(Math.max(0, question.scenariosPerRespondent), cards)
+  const showings = Math.floor(target) * perRespondent
+  return { showings, perCard: Math.floor(showings / cards), extraCards: showings % cards }
 }
 
 /** A short card table in the accepted format, used as an in-app example. */

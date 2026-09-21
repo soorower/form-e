@@ -23,6 +23,14 @@ import type { MutationCtx, QueryCtx } from './_generated/server'
  *   password sign-in for the same address.
  * - Everyone else is signed in but waiting: they see nothing.
  *
+ * **An address only counts once it is trusted.** Google proves the address; a
+ * password sign-up proves nothing (no verification mail is configured), and
+ * it gets its own `users` row even when the address already has a Google
+ * account. Rights keyed by email used to be handed to any such row, so typing
+ * an admin's address on the sign-up page made you an admin. Now the
+ * ADMIN_EMAILS bootstrap needs a verified address, and group membership and
+ * assignments need a verified address or an account the admin approved.
+ *
  * Tablet-facing functions (reading one questionnaire, submitting a response)
  * stay public because enumerators in the field do not sign in.
  */
@@ -69,8 +77,31 @@ export function bootstrapAdmins(): Set<string> {
   )
 }
 
+/** Whether the sign-in provider proved this address (Google does, a password does not). */
+export function emailVerified(user: Doc<'users'>): boolean {
+  return user.emailVerificationTime !== undefined
+}
+
+/**
+ * Whether rights granted to this account's address (group membership,
+ * surveyor assignments) may be given to this account: the address is proved,
+ * or the admin looked at this very account and approved it.
+ */
+export function emailTrusted(user: Doc<'users'>): boolean {
+  return emailVerified(user) || user.status === 'approved'
+}
+
+/** The address whose groups and assignments this account gets, or '' while it is not trusted. */
+export function trustedEmail(user: Doc<'users'>): string {
+  return user.email && emailTrusted(user) ? normalizeEmail(user.email) : ''
+}
+
 export function isAdminUser(user: Doc<'users'>): boolean {
+  // Granted to this account by an admin, so it holds whatever the sign-in.
   if (user.role === 'admin') return true
+  // The bootstrap goes by address alone, so the address has to be proved:
+  // otherwise anyone who knows it signs up with a password and is admin.
+  if (!emailVerified(user)) return false
   const email = user.email ? normalizeEmail(user.email) : ''
   return email !== '' && bootstrapAdmins().has(email)
 }
@@ -122,7 +153,9 @@ export async function questionnaireByAppId(
 }
 
 export async function accessFor(ctx: Ctx, user: Doc<'users'>): Promise<Access> {
-  const email = user.email ? normalizeEmail(user.email) : ''
+  // An unproved, unapproved address carries nothing: no groups (which would
+  // also approve the account) and no assignments.
+  const email = trustedEmail(user)
   const memberships = email
     ? await ctx.db
         .query('groupMembers')

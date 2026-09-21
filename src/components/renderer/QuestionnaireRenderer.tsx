@@ -1,5 +1,5 @@
-import { useState, type FormEvent, type KeyboardEvent } from 'react'
-import { Check } from 'lucide-react'
+import { useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
+import { Check, CloudOff, EyeOff } from 'lucide-react'
 import { Button } from '#/components/ui/button'
 import { Input } from '#/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '#/components/ui/select'
@@ -34,6 +34,20 @@ export interface ResponseMeta {
 /** Per choice-experiment question id: how often each card set has been shown. */
 export type QuestionnaireCardExposure = Record<string, CardExposure>
 
+/** Per choice-experiment question id: the cards (set numbers) the server handed this interview. */
+export type QuestionnaireCardDraws = Record<string, number[]>
+
+/** What became of a submitted response. */
+export interface SubmitOutcome {
+  /** The number the server assigned, once it has the response. */
+  surveyNumber?: string
+  /**
+   * The response is kept on this device and will be sent when the connection
+   * returns; the confirmation screen says so instead of showing a number.
+   */
+  pending?: boolean
+}
+
 interface QuestionnaireRendererProps {
   questionnaire: Questionnaire
   /** Survey number and enumerator shown in the header and saved with the response. */
@@ -44,11 +58,28 @@ interface QuestionnaireRendererProps {
    */
   cardExposure?: QuestionnaireCardExposure
   /**
-   * Called with the completed response. May return the survey number actually
-   * assigned by the server, which is then shown on the confirmation screen.
-   * Omit for a preview that records nothing.
+   * Cards the server reserved for this interview (`responses.drawCards`).
+   * A balanced block shows these; blocks without an entry draw for
+   * themselves from `cardExposure`.
    */
-  onSubmit?: (response: SurveyResponse) => void | string | Promise<string | void>
+  cardDraws?: QuestionnaireCardDraws
+  /**
+   * The id this interview is saved under, when the page needs it before
+   * Submit (cards are reserved against it). Left out, the renderer makes one.
+   */
+  responseId?: string
+  /** "Start a new response" was pressed: time for a new `responseId`. */
+  onRestart?: () => void
+  /**
+   * Called with the completed response. May return the survey number actually
+   * assigned by the server (or a `SubmitOutcome`), which is then shown on the
+   * confirmation screen. Rejecting keeps the answers on screen with a message,
+   * and the next attempt carries the same response id. Omit for a preview
+   * that records nothing.
+   */
+  onSubmit?: (
+    response: SurveyResponse,
+  ) => void | string | SubmitOutcome | Promise<string | SubmitOutcome | void>
   /**
    * `page` shows every question on one scrolling page (the default).
    * `steps` shows one question at a time with Back / Next, the way a
@@ -62,6 +93,9 @@ export function QuestionnaireRenderer({
   questionnaire,
   meta,
   cardExposure,
+  cardDraws,
+  responseId: givenResponseId,
+  onRestart,
   onSubmit,
   mode = 'page',
 }: QuestionnaireRendererProps) {
@@ -70,6 +104,12 @@ export function QuestionnaireRenderer({
   const [attempted, setAttempted] = useState(false)
   const [submitted, setSubmitted] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  // Set when the response is kept on this device rather than on the server yet.
+  const [pendingUpload, setPendingUpload] = useState(false)
+  const [saveFailed, setSaveFailed] = useState(false)
+  // One id per interview, kept across failed attempts: the server ignores an
+  // id it already holds, so pressing Submit again can never record it twice.
+  const responseId = useRef<string | null>(null)
   // Steps mode: which question is on screen, and whether Next was pressed
   // on it while it was still unanswered.
   const [step, setStep] = useState(0)
@@ -114,12 +154,17 @@ export function QuestionnaireRenderer({
         ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
       return
     }
+    if (!onSubmit) {
+      // A preview: nothing is stored, and the confirmation screen says so.
+      setSubmitted('')
+      return
+    }
     setSubmitting(true)
+    setSaveFailed(false)
+    responseId.current ??= uid()
     try {
-      // The id is generated here so a retry after a dropped connection is
-      // recorded once, not twice.
-      const assigned = await onSubmit?.({
-        id: uid(),
+      const result = await onSubmit({
+        id: givenResponseId ?? responseId.current,
         questionnaireId: questionnaire.id,
         serial: meta?.serial ?? 0,
         surveyNumber: meta?.surveyNumber ?? '',
@@ -128,19 +173,31 @@ export function QuestionnaireRenderer({
         answers,
         submittedAt: Date.now(),
       })
-      setSubmitted(assigned ?? meta?.surveyNumber ?? '')
+      const outcome: SubmitOutcome =
+        typeof result === 'string' ? { surveyNumber: result } : (result ?? {})
+      setPendingUpload(outcome.pending === true)
+      setSubmitted(outcome.pending ? '' : (outcome.surveyNumber ?? meta?.surveyNumber ?? ''))
+    } catch (error) {
+      // Without this the button simply went back to "Submit" and the
+      // interview looked saved. The answers stay on screen for another try.
+      console.error('Saving the response failed', error)
+      setSaveFailed(true)
     } finally {
       setSubmitting(false)
     }
   }
 
   function reset() {
+    responseId.current = null
     setAnswers({})
     setAttempted(false)
     setSubmitting(false)
+    setPendingUpload(false)
+    setSaveFailed(false)
     setSubmitted(null)
     setStep(0)
     setStepAttempted(false)
+    onRestart?.()
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
@@ -174,6 +231,33 @@ export function QuestionnaireRenderer({
     }
   }
 
+  if (submitted !== null && !onSubmit) {
+    // The editor's preview. It used to say "Response recorded" with a survey
+    // number here, although a preview stores nothing.
+    return (
+      <div
+        lang={lang}
+        className="mx-auto flex w-full max-w-3xl flex-col items-center gap-4 rounded-2xl border border-amber-500/40 bg-amber-500/10 p-10 text-center"
+      >
+        <span className="flex size-14 items-center justify-center rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400">
+          <EyeOff className="size-7" />
+        </span>
+        <h2 className="text-2xl font-bold">
+          {t('Preview finished: nothing was recorded', 'প্রিভিউ শেষ: কিছুই সংরক্ষিত হয়নি')}
+        </h2>
+        <p className="max-w-md text-muted-foreground">
+          {t(
+            'This was only a preview, so these answers were not saved and no survey number was used. To collect real responses, use “Open for respondents”.',
+            'এটি শুধু প্রিভিউ ছিল, তাই এই উত্তরগুলো সংরক্ষিত হয়নি এবং কোনো জরিপ নম্বর ব্যবহৃত হয়নি। প্রকৃত উত্তর সংগ্রহ করতে “Open for respondents” ব্যবহার করুন।',
+          )}
+        </p>
+        <Button type="button" size="lg" variant="outline" className="h-12 px-8 text-base" onClick={reset}>
+          {t('Preview again', 'আবার প্রিভিউ দেখুন')}
+        </Button>
+      </div>
+    )
+  }
+
   if (submitted !== null) {
     return (
       <div
@@ -181,9 +265,21 @@ export function QuestionnaireRenderer({
         className="mx-auto flex w-full max-w-3xl flex-col items-center gap-4 rounded-2xl border border-border bg-card p-10 text-center"
       >
         <span className="flex size-14 items-center justify-center rounded-full bg-primary/10 text-primary">
-          <Check className="size-7" />
+          {pendingUpload ? <CloudOff className="size-7" /> : <Check className="size-7" />}
         </span>
-        <h2 className="text-2xl font-bold">{t('Response recorded', 'উত্তর সংরক্ষিত হয়েছে')}</h2>
+        <h2 className="text-2xl font-bold">
+          {pendingUpload
+            ? t('Saved on this device', 'এই ডিভাইসে সংরক্ষিত হয়েছে')
+            : t('Response recorded', 'উত্তর সংরক্ষিত হয়েছে')}
+        </h2>
+        {pendingUpload && (
+          <p className="max-w-md text-muted-foreground">
+            {t(
+              'There is no connection right now. The response is kept on this device and is sent by itself when the internet is back; it gets its survey number then.',
+              'এই মুহূর্তে ইন্টারনেট সংযোগ নেই। উত্তরটি এই ডিভাইসে রাখা আছে, সংযোগ ফিরে এলে নিজে থেকেই পাঠানো হবে এবং তখনই জরিপ নম্বর পাবে।',
+            )}
+          </p>
+        )}
         {submitted && (
           <p className="text-lg">
             {t('Survey no.', 'জরিপ নং')} <span className="font-mono font-semibold">{submitted}</span>
@@ -371,6 +467,7 @@ export function QuestionnaireRenderer({
             }
             invalid={(attempted || stepAttempted) && missing.includes(current.id)}
             exposure={cardExposure ? (cardExposure[current.id] ?? {}) : undefined}
+            assignedSets={cardDraws?.[current.id]}
           />
 
           {stepAttempted && missing.includes(current.id) && (
@@ -378,6 +475,8 @@ export function QuestionnaireRenderer({
               {t('This question needs an answer.', 'এই প্রশ্নের উত্তর দিতে হবে।')}
             </p>
           )}
+
+          {saveFailed && <SaveFailedNotice lang={lang} />}
 
           <div className="flex items-center justify-between gap-3 pt-2">
             <Button
@@ -417,6 +516,7 @@ export function QuestionnaireRenderer({
             }
             invalid={attempted && missing.includes(question.id)}
             exposure={cardExposure ? (cardExposure[question.id] ?? {}) : undefined}
+            assignedSets={cardDraws?.[question.id]}
           />
         ))
       )}
@@ -431,6 +531,7 @@ export function QuestionnaireRenderer({
               )}
             </p>
           )}
+          {saveFailed && <SaveFailedNotice lang={lang} />}
           <Button
             type="submit"
             size="lg"
@@ -442,5 +543,19 @@ export function QuestionnaireRenderer({
         </div>
       )}
     </form>
+  )
+}
+
+/** Shown beside Submit when the response could not be saved; nothing is lost. */
+function SaveFailedNotice({ lang }: { lang: Lang }) {
+  return (
+    <p
+      role="alert"
+      className="w-full rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-center text-sm font-medium text-destructive"
+    >
+      {lang === 'bn'
+        ? 'উত্তরটি সংরক্ষণ করা যায়নি। আপনার উত্তরগুলো এখানেই আছে — ইন্টারনেট সংযোগ দেখে আবার “জমা দিন” চাপুন।'
+        : 'This response could not be saved. Your answers are still here: check the internet connection and press Submit again.'}
+    </p>
   )
 }

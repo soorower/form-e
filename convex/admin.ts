@@ -179,6 +179,7 @@ export const overview = query({
           groupId: questionnaire.groupId ?? null,
           surveyors: surveyorsBySurvey.get(questionnaire.id) ?? [],
           responseCount: responseCounts.get(questionnaire.id) ?? 0,
+          responseTarget: questionnaire.responseTarget,
           updatedAt: questionnaire.updatedAt,
         }))
         .sort((a, b) => b.updatedAt - a.updatedAt),
@@ -379,6 +380,27 @@ export const assignOwner = mutation({
       }
     }
     await ctx.db.patch(questionnaire._id, { ownerId: ownerId ?? undefined })
+  },
+})
+
+/**
+ * Fixes the total number of responses a survey is after (0 = no target). The
+ * editor's "Survey target" field writes the same value; this lets the admin
+ * set it from the Surveys tab without opening the survey.
+ */
+export const setResponseTarget = mutation({
+  args: { questionnaireId: v.string(), responseTarget: v.number() },
+  handler: async (ctx, { questionnaireId, responseTarget }) => {
+    await requireAdmin(ctx)
+    const questionnaire = await questionnaireByAppId(ctx, questionnaireId)
+    if (!questionnaire) throw new ConvexError('That survey no longer exists.')
+    if (!Number.isFinite(responseTarget) || responseTarget < 0) {
+      throw new ConvexError('The target must be zero or more.')
+    }
+    await ctx.db.patch(questionnaire._id, {
+      responseTarget: Math.floor(responseTarget),
+      updatedAt: Date.now(),
+    })
   },
 })
 

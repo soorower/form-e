@@ -170,7 +170,8 @@ export function createQuestion(type: QuestionType): Question {
         alternatives: [],
         attributes: [],
         referenceColumns: [],
-        drawMode: 'random',
+        // New blocks share their cards out evenly; older ones keep what they had.
+        drawMode: 'balanced',
         cards: [],
         levelLabels: {},
         scenariosPerRespondent: 3,

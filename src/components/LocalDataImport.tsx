@@ -4,6 +4,7 @@ import { CloudUpload, Check } from 'lucide-react'
 import { api } from '../../convex/_generated/api'
 import { Button } from '#/components/ui/button'
 import { encodeQuestionnaire } from '#/lib/convex/questionnaire-codec'
+import { encodeAnswers } from '#/lib/convex/response-codec'
 import { listQuestionnaires, listResponses } from '#/lib/questionnaire/storage'
 import type { Questionnaire, SurveyResponse } from '#/lib/questionnaire/types'
 
@@ -47,7 +48,12 @@ export function LocalDataImport() {
       for (const questionnaire of local.questionnaires) {
         await saveQuestionnaire(encodeQuestionnaire(questionnaire) as never)
       }
-      const imported = await importResponses({ responses: local.responses })
+      const imported = await importResponses({
+        responses: local.responses.map((response) => ({
+          ...response,
+          answers: encodeAnswers(response.answers),
+        })),
+      })
       window.localStorage.setItem(DONE_KEY, String(Date.now()))
       setMessage(
         `Uploaded ${local.questionnaires.length} ${

@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { parseCardTable, EXAMPLE_CARD_TABLE, EXAMPLE_TWO_ROW_CARD_TABLE } from './cards'
-import { exportColumns, responsesToRows, toCsv } from './export'
+import {
+  countByEnumerator,
+  exportColumns,
+  exportFileName,
+  filterByEnumerator,
+  responsesToRows,
+  toCsv,
+} from './export'
 import { createPrompt, createQuestion, createQuestionnaire, text } from './factory'
 import type { Questionnaire, SurveyResponse } from './types'
 
@@ -228,5 +235,45 @@ describe('exportColumns and toCsv', () => {
     const csv = toCsv(['a', 'b'], [{ a: 'x,y', b: 'multi\nline "q"' }])
     expect(csv.charCodeAt(0)).toBe(0xfeff)
     expect(csv.slice(1)).toBe('a,b\r\n"x,y","multi\nline ""q"""\r\n')
+  })
+})
+
+describe('responses of one enumerator', () => {
+  const collected = ['Ikra', ' Ikra ', 'Nawal', '', '  ', 'Ikra', 'ইকরা'].map((enumerator) => ({
+    enumerator,
+  }))
+
+  it('counts by trimmed name, the most first, with the unnamed ones together', () => {
+    expect(countByEnumerator(collected)).toEqual([
+      ['Ikra', 3],
+      ['', 2],
+      ['Nawal', 1],
+      ['ইকরা', 1],
+    ])
+  })
+
+  it('keeps one person, the unnamed ones, or everybody', () => {
+    expect(filterByEnumerator(collected, 'Ikra')).toHaveLength(3)
+    expect(filterByEnumerator(collected, '')).toHaveLength(2)
+    expect(filterByEnumerator(collected, 'Tourat')).toEqual([])
+    expect(filterByEnumerator(collected, null)).toBe(collected)
+  })
+
+  it('names a one-person download after that person', () => {
+    const questionnaire = { ...createQuestionnaire(), title: text('AC Bus: Sylhet–Dhaka') }
+    const date = new Date().toISOString().slice(0, 10)
+    expect(exportFileName(questionnaire, 'csv')).toBe(`ac-bus-sylhetdhaka-responses-${date}.csv`)
+    expect(exportFileName(questionnaire, 'csv', 'Ikra')).toBe(
+      `ac-bus-sylhetdhaka-responses-ikra-${date}.csv`,
+    )
+    expect(exportFileName(questionnaire, 'xlsx', 'Md. Tourat / B')).toBe(
+      `ac-bus-sylhetdhaka-responses-md-tourat-b-${date}.xlsx`,
+    )
+    expect(exportFileName(questionnaire, 'json', 'ইকরা')).toBe(
+      `ac-bus-sylhetdhaka-responses-ইকরা-${date}.json`,
+    )
+    expect(exportFileName(questionnaire, 'json', '')).toBe(
+      `ac-bus-sylhetdhaka-responses-no-name-${date}.json`,
+    )
   })
 })

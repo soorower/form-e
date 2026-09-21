@@ -49,6 +49,14 @@ export function QuestionnaireBuilder({ questionnaire, onUpdate }: QuestionnaireB
 
   const moveTo = (from: number, to: number) => setQuestions((list) => moveItem(list, from, to))
 
+  // Choice-experiment blocks plan their cards against the survey's target.
+  const survey = {
+    id: questionnaire.id,
+    responseTarget: questionnaire.responseTarget,
+    onResponseTargetChange: (responseTarget: number) =>
+      onUpdate((current) => ({ ...current, responseTarget })),
+  }
+
   return (
     <div className="grid gap-6 lg:grid-cols-[17rem_minmax(0,1fr)] lg:items-start">
       <aside className="lg:sticky lg:top-24">
@@ -84,6 +92,7 @@ export function QuestionnaireBuilder({ questionnaire, onUpdate }: QuestionnaireB
                       index={index}
                       total={questions.length}
                       languages={languages}
+                      survey={survey}
                       handle={handle}
                       dragging={dragging}
                       onChange={changeQuestion}

@@ -162,8 +162,10 @@ export interface ChoicePrompt {
 }
 
 /**
- * How cards are drawn for each respondent. 'balanced' prefers the cards shown
- * the fewest times so far, the way a pre-allocated frequency sheet would.
+ * How cards are drawn for each respondent. 'balanced' hands every interview
+ * the cards used least so far (the server counts across all tablets, see
+ * `responses.drawCards`), so over the survey's `responseTarget` every card is
+ * shown equally often, give or take one.
  */
 export type CardDrawMode = 'random' | 'balanced'
 

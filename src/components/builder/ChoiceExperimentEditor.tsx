@@ -11,7 +11,6 @@ import {
 } from 'lucide-react'
 import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
-import { Input } from '#/components/ui/input'
 import { Label } from '#/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '#/components/ui/select'
 import { Switch } from '#/components/ui/switch'
@@ -43,11 +42,14 @@ import type {
   Lang,
   LocalizedText,
 } from '#/lib/questionnaire/types'
+import { CardDistribution, type SurveyTarget } from './CardDistribution'
 import { LocalizedInput } from './LocalizedInput'
 
 interface ChoiceExperimentEditorProps {
   question: ChoiceExperimentQuestion
   languages: Lang[]
+  /** The survey's fixed target, which the card plan is worked out from. */
+  survey?: SurveyTarget
   onChange: (patch: Partial<ChoiceExperimentQuestion>) => void
 }
 
@@ -56,7 +58,12 @@ const ANSWER_LABELS: Record<ChoicePromptAnswer, string> = {
   options: 'Own options',
 }
 
-export function ChoiceExperimentEditor({ question, languages, onChange }: ChoiceExperimentEditorProps) {
+export function ChoiceExperimentEditor({
+  question,
+  languages,
+  survey,
+  onChange,
+}: ChoiceExperimentEditorProps) {
   const hasCards = question.cards.length > 0
   const [pasted, setPasted] = useState('')
   const [showImport, setShowImport] = useState(!hasCards)
@@ -499,41 +506,7 @@ export function ChoiceExperimentEditor({ question, languages, onChange }: Choice
 
       {hasCards && (
         <>
-          <div className="space-y-2">
-            <Label htmlFor={`scenarios-${question.id}`}>Scenarios per respondent</Label>
-            <Input
-              id={`scenarios-${question.id}`}
-              type="number"
-              min={1}
-              max={question.cards.length}
-              value={question.scenariosPerRespondent}
-              className="w-28"
-              onChange={(event) => {
-                const next = Number(event.target.value)
-                if (!Number.isInteger(next)) return
-                onChange({
-                  scenariosPerRespondent: Math.max(1, Math.min(next, question.cards.length)),
-                })
-              }}
-            />
-            <p className="text-xs text-muted-foreground">
-              Each respondent is shown this many cards, drawn at random without repeats from the{' '}
-              {question.cards.length} imported. The set numbers shown are saved with the answers.
-            </p>
-            <Label className="cursor-pointer gap-3 pt-1 font-normal">
-              <Switch
-                checked={question.drawMode === 'balanced'}
-                onCheckedChange={(balanced) =>
-                  onChange({ drawMode: balanced ? 'balanced' : 'random' })
-                }
-              />
-              Balance card usage across respondents
-            </Label>
-            <p className="text-xs text-muted-foreground">
-              When on, each tablet draws the cards shown the fewest times so far, so every card
-              ends up used about equally, like a pre-allocated frequency sheet. Off draws at random.
-            </p>
-          </div>
+          <CardDistribution question={question} survey={survey} onChange={onChange} />
 
           <div className="space-y-2">
             <Label>First column heading</Label>

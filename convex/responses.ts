@@ -1,5 +1,12 @@
 import { v } from 'convex/values'
-import { mutation, query } from './_generated/server'
+import { mutation, query, type MutationCtx, type QueryCtx } from './_generated/server'
+import {
+  CARD_RESERVATION_MS,
+  pickLeastUsed,
+  tallyAnswers,
+  tallySets,
+  type CardCounts,
+} from './cardBalance'
 import {
   canAccess,
   canView,
@@ -14,9 +21,9 @@ import { lang } from './validators'
 
 // Reading answers needs builder access to their survey. `progress` gives the
 // team (surveyors included) who collected what, without the answers.
-// Submitting, the next serial, and card exposure stay public: they serve the
-// tablet fill page, where enumerators need not sign in; a signed-in surveyor
-// is stamped onto the response by the server.
+// Submitting, the next serial, drawing cards, and card exposure stay public:
+// they serve the tablet fill page, where enumerators need not sign in; a
+// signed-in surveyor is stamped onto the response by the server.
 
 /** "ACBUS-" + 7 -> "ACBUS-007". Mirrors formatSurveyNumber in the client. */
 function formatSurveyNumber(prefix: string, serial: number): string {
@@ -33,6 +40,46 @@ async function highestSerial(
     .order('desc')
     .first()
   return last?.serial ?? 0
+}
+
+/**
+ * Card usage for one survey, per choice-experiment question id: `shown` from
+ * the responses already recorded, `reserved` from interviews still going on.
+ * Counted from the responses themselves each time rather than kept in a
+ * tally, so deleting or importing responses can never leave it out of step.
+ * `expired` are reservations nobody submitted in time; a mutation clears them.
+ */
+async function cardUsage(ctx: QueryCtx | MutationCtx, questionnaireId: string, now: number) {
+  const shown = new Map<string, CardCounts>()
+  const reserved = new Map<string, CardCounts>()
+  const responses = await ctx.db
+    .query('responses')
+    .withIndex('by_questionnaire', (q) => q.eq('questionnaireId', questionnaireId))
+    .collect()
+  for (const response of responses) tallyAnswers(response.answers, shown)
+  const submitted = new Set(responses.map((response) => response.id))
+
+  const draws = await ctx.db
+    .query('cardDraws')
+    .withIndex('by_questionnaire', (q) => q.eq('questionnaireId', questionnaireId))
+    .collect()
+  const expired = []
+  for (const draw of draws) {
+    if (submitted.has(draw.responseId) || now - draw.drawnAt > CARD_RESERVATION_MS) {
+      expired.push(draw)
+    } else {
+      tallySets(draw.questionId, draw.sets, reserved)
+    }
+  }
+  return { shown, reserved, expired }
+}
+
+async function releaseCards(ctx: MutationCtx, responseId: string) {
+  const draws = await ctx.db
+    .query('cardDraws')
+    .withIndex('by_response', (q) => q.eq('responseId', responseId))
+    .collect()
+  for (const draw of draws) await ctx.db.delete(draw._id)
 }
 
 export const listBySurvey = query({
@@ -124,6 +171,8 @@ export const submit = mutation({
       .query('responses')
       .withIndex('by_app_id', (q) => q.eq('id', args.id))
       .unique()
+    // The cards this interview reserved now count through the response itself.
+    await releaseCards(ctx, args.id)
     if (duplicate) return { serial: duplicate.serial, surveyNumber: duplicate.surveyNumber }
 
     const questionnaire = await ctx.db
@@ -198,34 +247,83 @@ export const importMany = mutation({
 })
 
 /**
- * How many times each design card has been shown, per choice-experiment
- * question, across every response to this survey. The tablet uses it to draw
- * the least-shown cards next ("balanced" mode), so exposure evens out the way
- * a pre-allocated frequency sheet would.
+ * Hands an interview its cards for every balanced choice-experiment block:
+ * the ones used least so far, counting the responses recorded and the cards
+ * other tablets are showing right now. Convex runs mutations one after the
+ * other, so two tablets starting at the same moment cannot be given the same
+ * "least-used" cards, and the most- and least-used card stay within one of
+ * each other. Asking again with the same response id returns the same cards.
+ */
+export const drawCards = mutation({
+  args: { questionnaireId: v.string(), responseId: v.string() },
+  handler: async (ctx, { questionnaireId, responseId }) => {
+    const held = await ctx.db
+      .query('cardDraws')
+      .withIndex('by_response', (q) => q.eq('responseId', responseId))
+      .collect()
+    if (held.length > 0) return held.map(({ questionId, sets }) => ({ questionId, sets }))
+
+    const questionnaire = await questionnaireByAppId(ctx, questionnaireId)
+    const blocks = (questionnaire?.questions ?? []).flatMap((question) =>
+      question.type === 'choice_experiment' &&
+      question.drawMode === 'balanced' &&
+      question.cards.length > 0
+        ? [question]
+        : [],
+    )
+    if (blocks.length === 0) return []
+
+    const now = Date.now()
+    const { shown, reserved, expired } = await cardUsage(ctx, questionnaireId, now)
+    for (const draw of expired) await ctx.db.delete(draw._id)
+
+    const drawn = []
+    for (const block of blocks) {
+      const usage: CardCounts = new Map(shown.get(block.id))
+      for (const [set, count] of reserved.get(block.id) ?? []) {
+        usage.set(set, (usage.get(set) ?? 0) + count)
+      }
+      const sets = pickLeastUsed(
+        block.cards.map((card) => card.set),
+        block.scenariosPerRespondent,
+        usage,
+      )
+      await ctx.db.insert('cardDraws', {
+        questionnaireId,
+        responseId,
+        questionId: block.id,
+        sets,
+        drawnAt: now,
+      })
+      drawn.push({ questionId: block.id, sets })
+    }
+    return drawn
+  },
+})
+
+/**
+ * How many times each design card has been used, per choice-experiment
+ * question: `count` in recorded responses, `reserved` in interviews going on
+ * right now. The editor shows it against the plan; the tablet falls back on
+ * it to draw the least-used cards itself when `drawCards` cannot be reached.
  */
 export const cardExposure = query({
   args: { questionnaireId: v.string() },
   handler: async (ctx, { questionnaireId }) => {
-    const rows = await ctx.db
-      .query('responses')
-      .withIndex('by_questionnaire', (q) => q.eq('questionnaireId', questionnaireId))
-      .collect()
-    const counts = new Map<string, { questionId: string; set: number; count: number }>()
-    for (const row of rows) {
-      const answers = row.answers as Record<string, unknown> | null | undefined
-      if (!answers || typeof answers !== 'object') continue
-      for (const [questionId, value] of Object.entries(answers)) {
-        const scenarios = (value as { scenarios?: unknown } | null)?.scenarios
-        if (!Array.isArray(scenarios)) continue
-        for (const scenario of scenarios as { set?: unknown }[]) {
-          if (typeof scenario?.set !== 'number') continue
-          const key = `${questionId}:${scenario.set}`
-          const entry = counts.get(key) ?? { questionId, set: scenario.set, count: 0 }
-          entry.count += 1
-          counts.set(key, entry)
-        }
+    const { shown, reserved } = await cardUsage(ctx, questionnaireId, Date.now())
+    const rows = []
+    for (const questionId of new Set([...shown.keys(), ...reserved.keys()])) {
+      const counts = shown.get(questionId)
+      const held = reserved.get(questionId)
+      for (const set of new Set([...(counts?.keys() ?? []), ...(held?.keys() ?? [])])) {
+        rows.push({
+          questionId,
+          set,
+          count: counts?.get(set) ?? 0,
+          reserved: held?.get(set) ?? 0,
+        })
       }
     }
-    return [...counts.values()]
+    return rows
   },
 })

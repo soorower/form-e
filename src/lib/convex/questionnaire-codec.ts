@@ -25,11 +25,13 @@ interface Pair<T> {
   value: T
 }
 
-function toPairs<T>(record: Record<string, T>): Pair<T>[] {
+export function toPairs<T>(record: Record<string, T>): Pair<T>[] {
   return Object.entries(record).map(([key, value]) => ({ key, value }))
 }
 
-function fromPairs<T>(pairs: Pair<T>[] | Record<string, T> | undefined): Record<string, T> {
+export function fromPairs<T>(
+  pairs: Pair<T>[] | Record<string, T> | undefined,
+): Record<string, T> {
   if (!pairs) return {}
   // Tolerates rows written before this encoding existed.
   if (!Array.isArray(pairs)) return pairs

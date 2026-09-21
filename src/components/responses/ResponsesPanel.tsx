@@ -7,20 +7,25 @@ import { Label } from '#/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '#/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#/components/ui/table'
 import {
+  countByEnumerator,
   defaultExportLanguage,
   downloadBlob,
   downloadText,
   exportColumns,
   exportFileName,
+  filterByEnumerator,
   responsesToRows,
   toCsv,
 } from '#/lib/questionnaire/export'
 import { XLSX_MIME, buildResponsesWorkbook } from '#/lib/questionnaire/export-xlsx'
 import { LANGUAGE_LABELS } from '#/lib/questionnaire/factory'
 import type { Lang, Questionnaire, SurveyResponse } from '#/lib/questionnaire/types'
+import { UNNAMED } from '#/lib/team/stats'
+import { cn } from '#/lib/utils'
 import { useQuery } from 'convex/react'
 import { api } from '../../../convex/_generated/api'
 import { useConvexReady } from '#/lib/convex/hooks'
+import { decodeResponses } from '#/lib/convex/response-codec'
 import { stripSystemFieldsAll } from '#/lib/convex/rows'
 
 interface ResponsesPanelProps {
@@ -36,44 +41,70 @@ const LATEST_COUNT = 10
  * order; the preview shows the newest first, since a choice-experiment
  * survey turns every response into several rows and the latest one would
  * otherwise sit far below the fold.
+ *
+ * Clicking an enumerator narrows all of it, downloads included, to that
+ * person's responses. The columns still come from every response, so each
+ * person's file has the same layout and the files can be stacked.
  */
 export function ResponsesPanel({ questionnaire }: ResponsesPanelProps) {
   const ready = useConvexReady()
-  const responses = stripSystemFieldsAll<SurveyResponse>(
-    useQuery(
-      api.responses.listBySurvey,
-      ready ? { questionnaireId: questionnaire.id } : 'skip',
-    ) as never,
+  const responses = decodeResponses(
+    stripSystemFieldsAll<SurveyResponse>(
+      useQuery(
+        api.responses.listBySurvey,
+        ready ? { questionnaireId: questionnaire.id } : 'skip',
+      ) as never,
+    ),
   )
   const [lang, setLang] = useState<Lang>(() => defaultExportLanguage(questionnaire))
   const [building, setBuilding] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
   const [previewLimit, setPreviewLimit] = useState(PREVIEW_ROWS)
   const [showAllLatest, setShowAllLatest] = useState(false)
+  // The enumerator whose responses are shown ('' = no name), or null for all.
+  const [chosenEnumerator, setChosenEnumerator] = useState<string | null>(null)
 
   if (responses === undefined) {
     return <p className="text-muted-foreground">Loading…</p>
   }
 
-  const rows = responsesToRows(questionnaire, responses, lang)
-  const newestFirst = [...responses].sort(
+  const byEnumerator = countByEnumerator(responses)
+  // A name whose last response has gone falls back to everyone.
+  const enumerator =
+    chosenEnumerator !== null && byEnumerator.some(([name]) => name === chosenEnumerator)
+      ? chosenEnumerator
+      : null
+  const shown = filterByEnumerator(responses, enumerator)
+  const enumeratorLabel = enumerator === null ? null : enumerator || UNNAMED
+
+  const rows = responsesToRows(questionnaire, shown, lang)
+  const newestFirst = [...shown].sort(
     (a, b) => b.submittedAt - a.submittedAt || b.serial - a.serial,
   )
   const previewRows = responsesToRows(questionnaire, newestFirst, lang)
   const latest = showAllLatest ? newestFirst : newestFirst.slice(0, LATEST_COUNT)
-  const byEnumerator = [...responses.reduce((counts, response) => {
-    const name = response.enumerator.trim() || '(no name)'
-    return counts.set(name, (counts.get(name) ?? 0) + 1)
-  }, new Map<string, number>())].sort((a, b) => b[1] - a[1])
-  const columns = exportColumns(questionnaire, rows)
+  const columns = exportColumns(
+    questionnaire,
+    enumerator === null ? rows : responsesToRows(questionnaire, responses, lang),
+  )
   const hasChoiceBlock = questionnaire.questions.some((q) => q.type === 'choice_experiment')
+
+  function showEnumerator(name: string | null) {
+    // Clicking the chosen name again goes back to everyone.
+    setChosenEnumerator((current) => (current === name ? null : name))
+    setPreviewLimit(PREVIEW_ROWS)
+    setShowAllLatest(false)
+  }
 
   async function downloadXlsx() {
     setBuilding(true)
     setExportError(null)
     try {
       const buffer = await buildResponsesWorkbook(questionnaire, columns, rows, lang)
-      downloadBlob(exportFileName(questionnaire, 'xlsx'), new Blob([buffer], { type: XLSX_MIME }))
+      downloadBlob(
+        exportFileName(questionnaire, 'xlsx', enumerator),
+        new Blob([buffer], { type: XLSX_MIME }),
+      )
     } catch (caught) {
       setExportError(
         caught instanceof Error ? caught.message : 'The Excel file could not be created.',
@@ -84,7 +115,11 @@ export function ResponsesPanel({ questionnaire }: ResponsesPanelProps) {
   }
 
   function downloadCsv() {
-    downloadText(exportFileName(questionnaire, 'csv'), toCsv(columns, rows), 'text/csv;charset=utf-8')
+    downloadText(
+      exportFileName(questionnaire, 'csv', enumerator),
+      toCsv(columns, rows),
+      'text/csv;charset=utf-8',
+    )
   }
 
   function downloadJson() {
@@ -94,11 +129,13 @@ export function ResponsesPanel({ questionnaire }: ResponsesPanelProps) {
         title: questionnaire.title,
         questions: questionnaire.questions,
       },
-      responses,
+      // Present only in a one-person download, so the file says what it holds.
+      ...(enumeratorLabel === null ? {} : { filter: { enumerator: enumeratorLabel } }),
+      responses: shown,
       rows,
     }
     downloadText(
-      exportFileName(questionnaire, 'json'),
+      exportFileName(questionnaire, 'json', enumerator),
       JSON.stringify(payload, null, 2),
       'application/json',
     )
@@ -108,7 +145,9 @@ export function ResponsesPanel({ questionnaire }: ResponsesPanelProps) {
     <Card>
       <CardHeader>
         <CardTitle>
-          {responses.length} {responses.length === 1 ? 'response' : 'responses'}
+          {enumerator === null
+            ? `${responses.length} ${responses.length === 1 ? 'response' : 'responses'}`
+            : `${shown.length} of ${responses.length} responses`}
         </CardTitle>
         <CardDescription>
           {hasChoiceBlock
@@ -117,6 +156,46 @@ export function ResponsesPanel({ questionnaire }: ResponsesPanelProps) {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        {byEnumerator.length > 0 && (
+          <div className="space-y-1.5">
+            <p className="text-xs font-medium text-muted-foreground">
+              Responses by enumerator
+              <span className="font-normal"> · click a name to see and download only theirs</span>
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <EnumeratorChip
+                name="Everyone"
+                count={responses.length}
+                active={enumerator === null}
+                onClick={() => showEnumerator(null)}
+              />
+              {byEnumerator.map(([name, count]) => (
+                <EnumeratorChip
+                  key={name}
+                  name={name || UNNAMED}
+                  count={count}
+                  active={enumerator === name}
+                  onClick={() => showEnumerator(name)}
+                />
+              ))}
+            </div>
+            {enumeratorLabel !== null && (
+              <p role="status" className="text-xs text-muted-foreground">
+                Showing only <span className="font-medium text-foreground">{enumeratorLabel}</span>:{' '}
+                {shown.length} of {responses.length} responses. The tables and the three downloads
+                below hold just these.{' '}
+                <button
+                  type="button"
+                  className="font-medium text-primary underline-offset-4 hover:underline"
+                  onClick={() => showEnumerator(null)}
+                >
+                  Show everyone
+                </button>
+              </p>
+            )}
+          </div>
+        )}
+
         <div className="flex flex-wrap items-end gap-2">
           <Button type="button" disabled={rows.length === 0 || building} onClick={downloadXlsx}>
             <FileSpreadsheet data-icon="inline-start" />
@@ -157,22 +236,6 @@ export function ResponsesPanel({ questionnaire }: ResponsesPanelProps) {
 
         {exportError && <p className="text-xs text-destructive">{exportError}</p>}
 
-        {byEnumerator.length > 0 && (
-          <div className="space-y-1.5">
-            <p className="text-xs font-medium text-muted-foreground">Responses by enumerator</p>
-            <div className="flex flex-wrap gap-2">
-              {byEnumerator.map(([name, count]) => (
-                <Badge key={name} variant="secondary" className="h-6 gap-1.5 px-2.5 text-xs">
-                  {name}
-                  <span className="rounded-full bg-background px-1.5 font-semibold tabular-nums">
-                    {count}
-                  </span>
-                </Badge>
-              ))}
-            </div>
-          </div>
-        )}
-
         {rows.length === 0 ? (
           <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-border p-10 text-center">
             <Inbox className="size-8 text-muted-foreground" />
@@ -184,7 +247,9 @@ export function ResponsesPanel({ questionnaire }: ResponsesPanelProps) {
         ) : (
           <>
             <div className="space-y-1.5">
-              <p className="text-xs font-medium text-muted-foreground">Latest submissions</p>
+              <p className="text-xs font-medium text-muted-foreground">
+                Latest submissions{enumeratorLabel !== null && ` by ${enumeratorLabel}`}
+              </p>
               <div className="overflow-x-auto rounded-lg border border-border">
                 <Table className="text-xs">
                   <TableHeader>
@@ -203,7 +268,7 @@ export function ResponsesPanel({ questionnaire }: ResponsesPanelProps) {
                           {response.surveyNumber || `#${response.serial}`}
                         </TableCell>
                         <TableCell className="py-1">
-                          {response.enumerator.trim() || '(no name)'}
+                          {response.enumerator.trim() || UNNAMED}
                           {response.surveyorCode && (
                             <span className="ml-1.5 rounded bg-muted px-1 font-mono text-[10px] text-muted-foreground">
                               {response.surveyorCode}
@@ -290,5 +355,28 @@ export function ResponsesPanel({ questionnaire }: ResponsesPanelProps) {
         )}
       </CardContent>
     </Card>
+  )
+}
+
+interface EnumeratorChipProps {
+  name: string
+  count: number
+  active: boolean
+  onClick: () => void
+}
+
+/** A name under "Responses by enumerator": pressing it narrows the panel to that person. */
+function EnumeratorChip({ name, count, active, onClick }: EnumeratorChipProps) {
+  return (
+    <Badge
+      variant={active ? 'default' : 'secondary'}
+      render={<button type="button" aria-pressed={active} onClick={onClick} />}
+      className={cn('h-7 cursor-pointer gap-1.5 px-3 text-xs', !active && 'hover:bg-secondary/70')}
+    >
+      {name}
+      <span className="rounded-full bg-background px-1.5 font-semibold tabular-nums text-foreground">
+        {count}
+      </span>
+    </Badge>
   )
 }
