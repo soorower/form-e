@@ -42,14 +42,11 @@ import type {
   Lang,
   LocalizedText,
 } from '#/lib/questionnaire/types'
-import { CardDistribution, type SurveyTarget } from './CardDistribution'
 import { LocalizedInput } from './LocalizedInput'
 
 interface ChoiceExperimentEditorProps {
   question: ChoiceExperimentQuestion
   languages: Lang[]
-  /** The survey's fixed target, which the card plan is worked out from. */
-  survey?: SurveyTarget
   onChange: (patch: Partial<ChoiceExperimentQuestion>) => void
 }
 
@@ -61,7 +58,6 @@ const ANSWER_LABELS: Record<ChoicePromptAnswer, string> = {
 export function ChoiceExperimentEditor({
   question,
   languages,
-  survey,
   onChange,
 }: ChoiceExperimentEditorProps) {
   const hasCards = question.cards.length > 0
@@ -506,8 +502,6 @@ export function ChoiceExperimentEditor({
 
       {hasCards && (
         <>
-          <CardDistribution question={question} survey={survey} onChange={onChange} />
-
           <div className="space-y-2">
             <Label>First column heading</Label>
             <LocalizedInput

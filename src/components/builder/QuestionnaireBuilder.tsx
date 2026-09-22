@@ -3,6 +3,7 @@ import { ClipboardList } from 'lucide-react'
 import { insertAt, moveItem } from '#/lib/list'
 import { createQuestion, duplicateQuestion } from '#/lib/questionnaire/factory'
 import type {
+  ChoiceExperimentQuestion,
   Question,
   QuestionType,
   Questionnaire,
@@ -12,6 +13,7 @@ import { FormSettings } from './FormSettings'
 import { InsertQuestion } from './InsertQuestion'
 import { QuestionCard } from './QuestionCard'
 import { QuestionPalette } from './QuestionPalette'
+import { SurveyCardPlan } from './SurveyCardPlan'
 import { SortableItem, SortableList } from './SortableList'
 
 type Updater = (current: Questionnaire) => Questionnaire
@@ -54,29 +56,31 @@ export function QuestionnaireBuilder({ questionnaire, onUpdate }: QuestionnaireB
 
   const moveTo = (from: number, to: number) => setQuestions((list) => moveItem(list, from, to))
 
-  // Choice-experiment blocks plan their cards against the survey's target, and
-  // one pasted scenario sheet is shared out over all of them in order.
-  const choiceBlocks = questions.flatMap((question) =>
-    question.type === 'choice_experiment'
-      ? [{ id: question.id, scenariosPerRespondent: question.scenariosPerRespondent }]
-      : [],
+  // Card distribution is survey-wide, so it lives in one panel rather than
+  // inside every block: the target, the way cards are handed out, and the one
+  // scenario sheet that is shared out over all the blocks in order.
+  const choiceBlocks = questions.filter(
+    (question): question is ChoiceExperimentQuestion => question.type === 'choice_experiment',
   )
-  const survey = {
-    id: questionnaire.id,
-    responseTarget: questionnaire.responseTarget,
-    onResponseTargetChange: (responseTarget: number) =>
-      onUpdate((current) => ({ ...current, responseTarget })),
-    choiceBlocks,
-    onPlanSplit: (byBlock: Map<string, ScenarioPlanRow[]>) =>
-      setQuestions((list) =>
-        list.map((question) => {
-          const rows = byBlock.get(question.id)
-          if (!rows || question.type !== 'choice_experiment') return question
-          // Every block that takes part follows the plan from now on.
-          return { ...question, drawMode: 'plan' as const, scenarioPlan: rows }
-        }),
+
+  const changeBlock = (id: string, patch: Partial<ChoiceExperimentQuestion>) =>
+    setQuestions((list) =>
+      list.map((question) =>
+        question.id === id && question.type === 'choice_experiment'
+          ? { ...question, ...patch }
+          : question,
       ),
-  }
+    )
+
+  const splitPlan = (byBlock: Map<string, ScenarioPlanRow[]>) =>
+    setQuestions((list) =>
+      list.map((question) => {
+        const rows = byBlock.get(question.id)
+        if (!rows || question.type !== 'choice_experiment') return question
+        // Every block that takes part follows the plan from now on.
+        return { ...question, drawMode: 'plan' as const, scenarioPlan: rows }
+      }),
+    )
 
   return (
     <div className="grid gap-6 lg:grid-cols-[17rem_minmax(0,1fr)] lg:items-start">
@@ -88,6 +92,17 @@ export function QuestionnaireBuilder({ questionnaire, onUpdate }: QuestionnaireB
         <FormSettings
           questionnaire={questionnaire}
           onChange={(patch) => onUpdate((current) => ({ ...current, ...patch }))}
+        />
+
+        <SurveyCardPlan
+          surveyId={questionnaire.id}
+          responseTarget={questionnaire.responseTarget}
+          onResponseTargetChange={(responseTarget) =>
+            onUpdate((current) => ({ ...current, responseTarget }))
+          }
+          blocks={choiceBlocks}
+          onBlockChange={changeBlock}
+          onPlanSplit={splitPlan}
         />
 
         {questions.length === 0 ? (
@@ -113,7 +128,6 @@ export function QuestionnaireBuilder({ questionnaire, onUpdate }: QuestionnaireB
                       index={index}
                       total={questions.length}
                       languages={languages}
-                      survey={survey}
                       handle={handle}
                       dragging={dragging}
                       onChange={changeQuestion}
