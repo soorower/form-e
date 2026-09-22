@@ -1,3 +1,4 @@
+import { BrandMark } from './BrandMark'
 export default function Footer() {
   const year = new Date().getFullYear()
 
@@ -7,12 +8,7 @@ export default function Footer() {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-12 mb-16">
           <div className="col-span-1 md:col-span-2 space-y-6">
             <div className="flex items-center gap-3">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-white shadow-lg shadow-indigo-500/20">
-                <svg className="size-5" viewBox="0 0 32 32" fill="none">
-                  <path d="M4 24V10a2 2 0 012-2h20a2 2 0 012 2v14" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
-                  <path d="M4 24h24" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
-                </svg>
-              </div>
+              <BrandMark size={32} className="rounded-lg" />
               <span className="text-xl font-bold tracking-tight">Form-E</span>
             </div>
             <p className="max-w-xs text-muted-foreground leading-relaxed">

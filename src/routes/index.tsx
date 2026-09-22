@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
 import { Button } from '#/components/ui/button'
+import { BrandMark } from '#/components/BrandMark'
 
 export const Route = createFileRoute('/')({
   head: () => ({ meta: [{ title: 'Form-E · Transportation survey builder' }] }),
@@ -162,17 +163,10 @@ function HomePage() {
         {/* Logo / Brand mark */}
         <div className="group relative">
           <div className="absolute -inset-12 animate-pulse rounded-full bg-gradient-to-tr from-indigo-500/20 via-violet-500/20 to-blue-500/20 blur-3xl" />
-          <div className="relative flex h-24 w-24 items-center justify-center rounded-3xl border border-white/20 bg-white/10 shadow-2xl backdrop-blur-xl transition-all duration-500 group-hover:scale-110 group-hover:rotate-3 dark:border-white/10 dark:bg-white/5">
-            <svg className="size-14 text-indigo-500 drop-shadow-glow transition-transform duration-500 group-hover:scale-110" viewBox="0 0 32 32" fill="none">
-              <path d="M4 24V10a2 2 0 012-2h20a2 2 0 012 2v14" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
-              <path d="M8 12h16v8H8z" fill="currentColor" opacity="0.2" rx="2" />
-              <path d="M4 24h24" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
-              <circle cx="10" cy="24" r="3" fill="currentColor" />
-              <circle cx="22" cy="24" r="3" fill="currentColor" />
-              <path d="M12 15h8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" opacity="0.6" />
-              <path d="M12 18h5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" opacity="0.4" />
-            </svg>
-          </div>
+          <BrandMark
+            size={96}
+            className="relative rounded-3xl shadow-2xl transition-all duration-500 group-hover:scale-110 group-hover:rotate-3"
+          />
         </div>
 
         <div className="space-y-6">

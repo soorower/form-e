@@ -6,6 +6,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import { encodeQuestionnaire } from '#/lib/convex/questionnaire-codec'
 import { createQuestion, createQuestionnaire, text } from '#/lib/questionnaire/factory'
 import { readOutbox } from '#/lib/questionnaire/outbox'
+import type { TextQuestion } from '#/lib/questionnaire/types'
 import { FillPage } from './FillPage'
 
 const mocks = vi.hoisted(() => ({
@@ -14,6 +15,11 @@ const mocks = vi.hoisted(() => ({
   abandon: vi.fn(),
   stored: null as unknown,
   exposure: { cards: [] as unknown[], planRows: [] as unknown[] },
+  viewer: { viewer: null, isSurveyor: false, canBuild: false } as {
+    viewer: unknown
+    isSurveyor: boolean
+    canBuild: boolean
+  },
 }))
 
 vi.mock('convex/react', () => ({
@@ -33,13 +39,17 @@ vi.mock('convex/react', () => ({
   },
 }))
 vi.mock('#/hooks/useViewer', () => ({
-  useViewer: () => ({ viewer: null, isSurveyor: false, canBuild: false }),
+  useViewer: () => mocks.viewer,
 }))
 vi.mock('#/components/auth/area', () => ({
   useSurveyPaths: () => ({ chat: '/chat', list: '/surveys', editor: '/editor' }),
 }))
 vi.mock('@tanstack/react-router', () => ({
-  Link: ({ children }: { children: ReactNode }) => <a>{children}</a>,
+  // Keeps `to` as the href so tests can assert where a link goes; `params`
+  // and friends are router-only and would end up as DOM attributes.
+  Link: ({ children, to }: { children?: ReactNode; to?: string; params?: unknown }) => (
+    <a href={to}>{children}</a>
+  ),
 }))
 
 function setOnline(online: boolean) {
@@ -238,5 +248,55 @@ describe('FillPage balanced cards', () => {
     expect(screen.getByText('4 Hours')).toBeTruthy()
     expect(screen.queryByText('1 Hours')).toBeNull()
     expect(screen.queryByText('2 Hours')).toBeNull()
+  })
+})
+
+describe('FillPage getting back', () => {
+  beforeAll(() => {
+    window.scrollTo = vi.fn()
+    mocks.stored = encodeQuestionnaire({
+      ...createQuestionnaire(),
+      id: 'survey-1',
+      questions: [
+        {
+          ...(createQuestion('short_text') as TextQuestion),
+          label: text('Your occupation'),
+          placeholder: text('Type here'),
+        },
+      ],
+    })
+  })
+
+  beforeEach(() => {
+    mocks.viewer = { viewer: null, isSurveyor: false, canBuild: false }
+  })
+
+  afterEach(cleanup)
+
+  it('offers no way out to a respondent on a shared tablet', async () => {
+    render(<FillPage surveyId="survey-1" />)
+    await screen.findByPlaceholderText('Type here')
+    expect(screen.queryByText('Back to the editor')).toBeNull()
+    expect(screen.queryByText('My surveys')).toBeNull()
+  })
+
+  it('puts a way back to the editor at the top for whoever can edit it', async () => {
+    mocks.viewer = { viewer: null, isSurveyor: false, canBuild: true }
+    render(<FillPage surveyId="survey-1" />)
+    // Above the form, not a small link below the last question: opening the
+    // survey for respondents used to be a one-way door.
+    // An anchor carrying base-ui's role="button", as the editor's own
+    // "Open for respondents" button is.
+    const back = await screen.findByText('Back to the editor')
+    expect(back.getAttribute('href')).toBe('/editor')
+    const form = document.querySelector('form')!
+    expect(back.compareDocumentPosition(form) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.getByText(/answers here are recorded/)).toBeTruthy()
+  })
+
+  it('sends a surveyor back to their own list instead', async () => {
+    mocks.viewer = { viewer: null, isSurveyor: true, canBuild: false }
+    render(<FillPage surveyId="survey-1" />)
+    expect((await screen.findByText('My surveys')).getAttribute('href')).toBe('/surveys')
   })
 })

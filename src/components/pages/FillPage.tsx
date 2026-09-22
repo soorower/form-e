@@ -1,5 +1,6 @@
 import { Link } from '@tanstack/react-router'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { ArrowLeft } from 'lucide-react'
 import { useMutation, useQuery } from 'convex/react'
 import { api } from '../../../convex/_generated/api'
 import { Button } from '#/components/ui/button'
@@ -301,6 +302,39 @@ export function FillPage({ surveyId, steps }: { surveyId: string; steps?: boolea
 
   return (
     <main className="page-wrap px-4 py-8 sm:py-12">
+      {/* Opening the form for respondents used to be a one-way door: the only
+          way back was a small link far below the last question. */}
+      {(canBuild || isSurveyor) && (
+        <div className="mx-auto mb-5 flex w-full max-w-3xl flex-wrap items-center justify-between gap-3">
+          {canBuild ? (
+            <Button
+              variant="outline"
+              size="sm"
+              nativeButton={false}
+              render={<Link to={paths.editor} params={{ surveyId }} />}
+            >
+              <ArrowLeft data-icon="inline-start" />
+              Back to the editor
+            </Button>
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              nativeButton={false}
+              render={<Link to={paths.list} />}
+            >
+              <ArrowLeft data-icon="inline-start" />
+              My surveys
+            </Button>
+          )}
+          {canBuild && (
+            <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
+              Open for respondents · answers here are recorded
+            </span>
+          )}
+        </div>
+      )}
+
       <QuestionnaireRenderer
         key={stepped ? 'steps' : 'page'}
         questionnaire={questionnaire}
@@ -356,16 +390,7 @@ export function FillPage({ surveyId, steps }: { surveyId: string; steps?: boolea
             Team chat
           </Link>
         )}
-        {isSurveyor && (
-          <Link to={paths.list} className="hover:text-foreground">
-            Back to my surveys
-          </Link>
-        )}
-        {canBuild && (
-          <Link to={paths.editor} params={{ surveyId }} className="hover:text-foreground">
-            Back to the editor
-          </Link>
-        )}
+
       </p>
     </main>
   )
