@@ -40,6 +40,27 @@ describe('parseScenarioPlan', () => {
     expect(pasted.rows).toHaveLength(5)
   })
 
+  it('takes as many scenario columns as the sheet has, nine included', () => {
+    // The AC Bus workbook's `Scenario` sheet is 50 rows of 9. Nine columns
+    // must give ONE block of nine scenarios, not three blocks of three, and
+    // the column count is what `scenariosPerRespondent` becomes.
+    const plan = parseScenarioPlan(EXAMPLE_SCENARIO_PLAN)
+    expect(plan.scenariosPerRow).toBe(9)
+    expect(plan.rows[0]).toEqual({ row: 1, sets: [14, 21, 25, 2, 7, 23, 35, 34, 9] })
+    // Row 3 names card 22 twice and card 18 twice, as the real sheet does.
+    expect(plan.rows[2]).toEqual({ row: 3, sets: [18, 24, 21, 22, 22, 2, 18, 25, 46] })
+
+    // Nothing is special about nine: a twenty-column sheet reads as twenty.
+    const wide = parseScenarioPlan(
+      [
+        ['Set', ...Array.from({ length: 20 }, (_u, i) => `Scenario${i + 1}`)].join('\t'),
+        ['1', ...Array.from({ length: 20 }, (_u, i) => String(i + 1))].join('\t'),
+      ].join('\n'),
+    )
+    expect(wide.scenariosPerRow).toBe(20)
+    expect(wide.rows[0].sets).toHaveLength(20)
+  })
+
   it('keeps the row numbers from the sheet, even when they do not start at 1', () => {
     const plan = parseScenarioPlan(['Respondent,S1,S2', '7,3,4', '8,1,2'].join('\n'))
     expect(plan.rows).toEqual([

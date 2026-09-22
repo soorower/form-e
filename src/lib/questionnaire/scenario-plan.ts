@@ -9,12 +9,15 @@ import type { ChoiceCard, ChoiceExperimentQuestion, ChoiceScenarioAnswer, Scenar
  *
  * The sheet is laid out the way `Scenario` sheets are:
  *
- *     Set   Scenario1  Scenario2  Scenario3
- *     1     14         21         25
- *     2     50         29         30
+ *     Set   Scenario1  Scenario2  Scenario3  …  Scenario9
+ *     1     14         21         25         …  9
+ *     2     50         29         30         …  37
  *
- * The first column numbers the rows; the rest name card set numbers. A row
- * may name the same card twice, and rows need not all be the same length.
+ * The first column numbers the rows; the rest name card set numbers. **As many
+ * scenario columns as the sheet has** — three, nine, twenty — and that count
+ * becomes `scenariosPerRespondent`, so a nine-column sheet asks nine scenarios
+ * in one block rather than needing three blocks of three. A row may name the
+ * same card twice, and rows need not all be the same length.
  */
 
 /** "Set", "Respondent", "Row", "No.", "Serial", "উত্তরদাতা", … — the row-number column. */
@@ -230,12 +233,18 @@ export function checkScenarioPlan(
   }
 }
 
-/** A short scenario plan in the accepted format, used as an in-app example. */
+/**
+ * A scenario plan in the accepted format, used as an in-app example. Nine
+ * scenarios a row, like the `Scenario` sheet of the AC Bus workbook, because
+ * the number of columns is exactly what decides how many scenarios each
+ * respondent answers — there is no fixed number. Row 3 shows card 22 twice
+ * and card 18 twice, which the plan is free to do.
+ */
 export const EXAMPLE_SCENARIO_PLAN = [
-  'Set\tScenario1\tScenario2\tScenario3',
-  '1\t14\t21\t25',
-  '2\t50\t29\t30',
-  '3\t18\t24\t21',
-  '4\t43\t47\t15',
-  '5\t50\t44\t24',
+  'Set\tScenario1\tScenario2\tScenario3\tScenario4\tScenario5\tScenario6\tScenario7\tScenario8\tScenario9',
+  '1\t14\t21\t25\t2\t7\t23\t35\t34\t9',
+  '2\t50\t29\t30\t8\t20\t10\t30\t48\t37',
+  '3\t18\t24\t21\t22\t22\t2\t18\t25\t46',
+  '4\t43\t47\t15\t17\t15\t25\t17\t45\t38',
+  '5\t50\t44\t24\t9\t23\t22\t15\t10\t7',
 ].join('\n')

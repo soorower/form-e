@@ -114,7 +114,7 @@ export function CardDistribution({ question, survey, onChange }: CardDistributio
           />
           <p className="text-xs text-muted-foreground">
             {usesPlan && planRows.length > 0
-              ? 'Set by the scenario plan: the number of cards its longest row names.'
+              ? `Set by the scenario plan: the ${question.scenariosPerRespondent} scenario columns of the sheet you imported.`
               : `Each respondent is shown this many of the ${question.cards.length} cards, never the
                  same one twice. The set numbers shown are saved with the answers.`}
           </p>
@@ -242,7 +242,7 @@ function ScenarioPlanPanel({
             value={pasted}
             onChange={(event) => setPasted(event.target.value)}
             placeholder={
-              'Paste the scenario sheet from Excel. First column numbers the rows, the rest are card numbers:\nSet\tScenario1\tScenario2\tScenario3\n1\t14\t21\t25\n2\t50\t29\t30'
+              'Paste the scenario sheet from Excel. First column numbers the rows; every other column is one scenario, as many as your sheet has:\nSet\tScenario1\tScenario2\t…\tScenario9\n1\t14\t21\t…\t9\n2\t50\t29\t…\t37'
             }
             className="min-h-32 font-mono text-xs"
             spellCheck={false}
@@ -287,9 +287,11 @@ function ScenarioPlanPanel({
             One row per respondent group. The first column is that row&apos;s number (headed{' '}
             <span className="font-mono">Set</span>, <span className="font-mono">Respondent</span>,{' '}
             <span className="font-mono">Row</span>, …); every other cell is a card{' '}
-            <span className="font-mono">Set</span> number from the design cards above. A row may
-            name the same card twice. Tab- or comma-separated, so a paste from Excel and a saved
-            CSV both work.
+            <span className="font-mono">Set</span> number from the design cards above.{' '}
+            <strong>However many scenario columns the sheet has is how many scenarios each
+            respondent answers</strong> — a nine-column sheet gives one block of nine, not three
+            blocks of three. A row may name the same card twice. Tab- or comma-separated, so a
+            paste from Excel and a saved CSV both work.
           </p>
         </div>
       ) : (
