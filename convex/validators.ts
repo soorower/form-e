@@ -134,7 +134,14 @@ export const question = v.union(
     referenceColumns: v.optional(
       v.array(v.object({ key: v.string(), label: localizedText, text: localizedText })),
     ),
-    drawMode: v.optional(v.union(v.literal('random'), v.literal('balanced'))),
+    drawMode: v.optional(
+      v.union(v.literal('random'), v.literal('balanced'), v.literal('plan')),
+    ),
+    // The creator's own card allocation, used when `drawMode` is 'plan':
+    // one row per respondent group naming the cards that respondent sees.
+    scenarioPlan: v.optional(
+      v.array(v.object({ row: v.number(), sets: v.array(v.number()) })),
+    ),
     // The questions under every scenario. Rows written before blocks could
     // ask several questions hold a single `prompt` and, for the profile
     // layout, its `choiceOptions`; the codec turns those into one prompt.
@@ -156,6 +163,34 @@ export const question = v.union(
 )
 
 /**
+ * The respondent's own details a survey may ask for, and whether each one has
+ * to be filled in. Optional because surveys saved before this existed have no
+ * such field; the client codec reads a missing value as "ask for nothing".
+ */
+export const respondentInfo = v.object({
+  fields: v.array(
+    v.object({
+      key: v.union(
+        v.literal('name'),
+        v.literal('email'),
+        v.literal('phone'),
+        v.literal('address'),
+      ),
+      required: v.boolean(),
+    }),
+  ),
+  note: localizedText,
+})
+
+/** What one respondent typed into those fields. Only the filled-in ones are stored. */
+export const respondentDetails = v.object({
+  name: v.optional(v.string()),
+  email: v.optional(v.string()),
+  phone: v.optional(v.string()),
+  address: v.optional(v.string()),
+})
+
+/**
  * A questionnaire as the client sends it. `id` is the app-level id generated
  * in the browser: it appears in survey URLs and is what responses and chat
  * messages reference, so it stays stable no matter which device saved the row.
@@ -173,6 +208,7 @@ export const questionnaireFields = {
   responseTarget: v.number(),
   surveyCodePrefix: v.string(),
   enumerators: v.array(v.string()),
+  respondent: v.optional(respondentInfo),
   // Who may see and edit this survey: its creator (`ownerId`, a users id,
   // set by the server on insert) and every member of its group (`groupId`,
   // set on insert to the creator's group and changed from the admin panel).
@@ -195,6 +231,9 @@ export const responseFields = {
   surveyorId: v.optional(v.string()),
   surveyorCode: v.optional(v.string()),
   language: lang,
+  // The respondent's own details, for the fields this survey asks for.
+  // Absent on responses to a survey that asks for none.
+  respondent: v.optional(respondentDetails),
   answers: v.any(),
   submittedAt: v.number(),
 }

@@ -153,3 +153,41 @@ describe('questionnaire codec', () => {
     expect(block.levelLabels['5 Hours']).toEqual({ en: 'x', bn: '' })
   })
 })
+
+describe('fields added after the first surveys were saved', () => {
+  it('reads a row with no respondent settings as asking for nothing', () => {
+    const questionnaire = createQuestionnaire()
+    const { respondent: _dropped, ...withoutRespondent } = encodeQuestionnaire(questionnaire)
+    const decoded = decodeQuestionnaire(withoutRespondent)!
+    expect(decoded.respondent).toEqual({ fields: [], note: { en: '', bn: '' } })
+  })
+
+  it('keeps the respondent settings through a round trip', () => {
+    const questionnaire: Questionnaire = {
+      ...createQuestionnaire(),
+      respondent: { fields: [{ key: 'phone', required: true }], note: text('Why we ask') },
+    }
+    const decoded = decodeQuestionnaire(encodeQuestionnaire(questionnaire))!
+    expect(decoded.respondent).toEqual(questionnaire.respondent)
+  })
+
+  it('keeps a scenario plan through a round trip, and defaults it to empty', () => {
+    const block = createQuestion('choice_experiment') as ChoiceExperimentQuestion
+    block.drawMode = 'plan'
+    block.scenarioPlan = [
+      { row: 1, sets: [14, 21, 25] },
+      { row: 2, sets: [50, 29, 30] },
+    ]
+    const questionnaire = { ...createQuestionnaire(), questions: [block] }
+    const decoded = decodeQuestionnaire(encodeQuestionnaire(questionnaire))!
+    const decodedBlock = decoded.questions[0] as ChoiceExperimentQuestion
+    expect(decodedBlock.drawMode).toBe('plan')
+    expect(decodedBlock.scenarioPlan).toEqual(block.scenarioPlan)
+
+    // A block saved before plans existed reads as having none.
+    const encoded = encodeQuestionnaire(questionnaire) as { questions: Record<string, unknown>[] }
+    delete encoded.questions[0].scenarioPlan
+    const older = decodeQuestionnaire(encoded)!.questions[0] as ChoiceExperimentQuestion
+    expect(older.scenarioPlan).toEqual([])
+  })
+})

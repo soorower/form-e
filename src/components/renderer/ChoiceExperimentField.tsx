@@ -16,6 +16,7 @@ import {
   type CardExposure,
 } from '#/lib/questionnaire/cards'
 import { formatNumber, pickText } from '#/lib/questionnaire/factory'
+import { followsPlan, leastUsedPlanRow, scenariosFromPlanRow } from '#/lib/questionnaire/scenario-plan'
 import { FORM_TEXT_DEFAULTS, localizedStyleClass } from '#/lib/questionnaire/text-style'
 import type {
   AnswerValue,
@@ -49,6 +50,14 @@ interface ChoiceExperimentFieldProps {
    * when there are none.
    */
   assignedSets?: number[]
+  /**
+   * The row of the block's scenario plan the server gave this interview. A
+   * planned block shows that row's cards; without it the block takes the
+   * least-used row from `planExposure`.
+   */
+  assignedPlanRow?: number
+  /** How often each plan row has been used so far, for the same fallback. */
+  planExposure?: CardExposure
 }
 
 /**
@@ -71,19 +80,49 @@ export function ChoiceExperimentField({
   domId,
   exposure,
   assignedSets,
+  assignedPlanRow,
+  planExposure,
 }: ChoiceExperimentFieldProps) {
   const answer = isChoiceExperimentAnswer(value) ? value : null
   const hasCards = question.cards.length > 0
   const balanced = question.drawMode === 'balanced'
-  const canDraw = !balanced || assignedSets !== undefined || exposure !== undefined
+  const planned = followsPlan(question)
+  // Both the balanced and the planned block are told what to show by the
+  // server, so neither picks anything until that answer (or the counts it
+  // falls back on) has arrived.
+  const fromServer = balanced || planned
+  const canDraw = !fromServer || assignedSets !== undefined || exposure !== undefined
 
   useEffect(() => {
     if (answer || !hasCards || !canDraw) return
+    if (planned) {
+      // A plan is followed, not drawn from: the row names the cards, in order.
+      const row = assignedPlanRow ?? leastUsedPlanRow(question, planExposure)
+      const scenarios = scenariosFromPlanRow(question, row)
+      // Only fall through to a draw if the row named no card this block still
+      // has — the design was re-imported after the plan, say.
+      if (scenarios.length > 0) {
+        onChange({ planRow: row, scenarios })
+        return
+      }
+    }
     const assigned = balanced && assignedSets ? scenariosFromSets(question, assignedSets) : []
     onChange({
       scenarios: assigned.length > 0 ? assigned : drawScenarios(question, undefined, exposure),
     })
-  }, [answer, hasCards, canDraw, balanced, question, exposure, assignedSets, onChange])
+  }, [
+    answer,
+    hasCards,
+    canDraw,
+    balanced,
+    planned,
+    question,
+    exposure,
+    assignedSets,
+    assignedPlanRow,
+    planExposure,
+    onChange,
+  ])
 
   const t = (en: string, bn: string) => (lang === 'bn' ? bn : en)
   const title = pickText(question.label, lang)
@@ -98,6 +137,7 @@ export function ChoiceExperimentField({
     onChange((current) => {
       if (!isChoiceExperimentAnswer(current)) return current ?? null
       return {
+        ...current,
         scenarios: current.scenarios.map((scenario, i) => (i === index ? change(scenario) : scenario)),
       }
     })
@@ -140,6 +180,15 @@ export function ChoiceExperimentField({
             'No design cards have been added to this section yet.',
             'এই অংশে এখনও কোনো কার্ড যোগ করা হয়নি।',
           )}
+        </p>
+      )}
+
+      {answer?.planRow !== undefined && (
+        <p className="text-sm text-muted-foreground">
+          {t('Scenario plan row', 'দৃশ্যপট তালিকার সারি')}:{' '}
+          <span className="font-mono font-semibold text-foreground">
+            {formatNumber(answer.planRow, lang)}
+          </span>
         </p>
       )}
 

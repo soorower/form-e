@@ -17,12 +17,24 @@ function bump(into: Map<string, CardCounts>, questionId: string, set: number) {
   into.set(questionId, counts)
 }
 
-/** Adds the cards one response showed, per choice-experiment question id. */
-export function tallyAnswers(answers: unknown, into: Map<string, CardCounts>): void {
+/**
+ * Adds the cards one response showed, per choice-experiment question id. When
+ * `planRows` is given, the row of the creator's scenario plan the response was
+ * given is tallied there, so plan rows are handed out as evenly as cards are.
+ */
+export function tallyAnswers(
+  answers: unknown,
+  into: Map<string, CardCounts>,
+  planRows?: Map<string, CardCounts>,
+): void {
   if (!answers || typeof answers !== 'object') return
   for (const [questionId, value] of Object.entries(answers as Record<string, unknown>)) {
-    const scenarios = (value as { scenarios?: unknown } | null)?.scenarios
+    const answer = value as { scenarios?: unknown; planRow?: unknown } | null
+    const scenarios = answer?.scenarios
     if (!Array.isArray(scenarios)) continue
+    if (planRows && typeof answer?.planRow === 'number') {
+      bump(planRows, questionId, answer.planRow)
+    }
     for (const scenario of scenarios as { set?: unknown }[]) {
       if (typeof scenario?.set === 'number') bump(into, questionId, scenario.set)
     }
@@ -32,6 +44,15 @@ export function tallyAnswers(answers: unknown, into: Map<string, CardCounts>): v
 /** Adds cards handed to an interview that has not been submitted yet. */
 export function tallySets(questionId: string, sets: number[], into: Map<string, CardCounts>): void {
   for (const set of sets) bump(into, questionId, set)
+}
+
+/** Adds one plan row held by an interview that has not been submitted yet. */
+export function tallyPlanRow(
+  questionId: string,
+  planRow: number,
+  into: Map<string, CardCounts>,
+): void {
+  bump(into, questionId, planRow)
 }
 
 function shuffle<T>(items: T[], random: (max: number) => number) {

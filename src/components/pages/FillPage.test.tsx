@@ -11,13 +11,18 @@ import { FillPage } from './FillPage'
 const mocks = vi.hoisted(() => ({
   submit: vi.fn(),
   drawCards: vi.fn(),
+  abandon: vi.fn(),
   stored: null as unknown,
-  exposure: [] as unknown[],
+  exposure: { cards: [] as unknown[], planRows: [] as unknown[] },
 }))
 
 vi.mock('convex/react', () => ({
-  useMutation: (reference: FunctionReference<'mutation'>) =>
-    getFunctionName(reference) === 'responses:drawCards' ? mocks.drawCards : mocks.submit,
+  useMutation: (reference: FunctionReference<'mutation'>) => {
+    const name = getFunctionName(reference)
+    if (name === 'responses:drawCards') return mocks.drawCards
+    if (name === 'responses:abandonDraw') return mocks.abandon
+    return mocks.submit
+  },
   useQuery: (reference: FunctionReference<'query'>, args: unknown) => {
     if (args === 'skip') return undefined
     const name = getFunctionName(reference)
@@ -137,7 +142,9 @@ describe('FillPage balanced cards', () => {
     window.localStorage.clear()
     mocks.submit.mockReset()
     mocks.drawCards.mockReset()
-    mocks.exposure = []
+    mocks.abandon.mockReset()
+    mocks.abandon.mockResolvedValue(undefined)
+    mocks.exposure = { cards: [], planRows: [] }
     setOnline(true)
     const block = {
       ...createQuestion('choice_experiment'),
@@ -187,15 +194,43 @@ describe('FillPage balanced cards', () => {
     expect(again.responseId).not.toBe(reserved.responseId)
   })
 
+  it('gives the cards back when an interview is abandoned, but not when it was submitted', async () => {
+    mocks.drawCards.mockResolvedValue([{ questionId: 'block', sets: [4, 2] }])
+    mocks.submit.mockResolvedValue({ serial: 1, surveyNumber: 'T-001' })
+    const view = render(<FillPage surveyId="survey-2" />)
+
+    await screen.findByText('4 Hours')
+    const abandoned = mocks.drawCards.mock.calls[0][0].responseId
+    // Walking away without submitting: the cards go back to the pool.
+    view.unmount()
+    expect(mocks.abandon.mock.calls.map(([args]) => args.responseId)).toContain(abandoned)
+
+    mocks.abandon.mockClear()
+    mocks.drawCards.mockResolvedValue([{ questionId: 'block', sets: [1, 3] }])
+    const second = render(<FillPage surveyId="survey-2" />)
+    await screen.findByText('1 Hours')
+    for (const option of screen.getAllByRole('radio')) fireEvent.click(option)
+    fireEvent.click(screen.getByRole('button', { name: 'Submit' }))
+    await screen.findByText('Response recorded')
+    const kept = mocks.drawCards.mock.calls.at(-1)![0].responseId
+
+    second.unmount()
+    // A recorded response accounts for its own cards; nothing is handed back.
+    expect(mocks.abandon.mock.calls.map(([args]) => args.responseId)).not.toContain(kept)
+  })
+
   it('draws the least-used cards itself when the server cannot be reached', async () => {
     // Held by Convex until the connection is back: neither resolves nor fails.
     mocks.drawCards.mockReturnValue(new Promise(() => undefined))
-    mocks.exposure = [
-      { questionId: 'block', set: 1, count: 3, reserved: 0 },
-      { questionId: 'block', set: 2, count: 2, reserved: 1 },
-      { questionId: 'block', set: 3, count: 0, reserved: 0 },
-      { questionId: 'block', set: 4, count: 1, reserved: 0 },
-    ]
+    mocks.exposure = {
+      cards: [
+        { questionId: 'block', set: 1, count: 3, reserved: 0 },
+        { questionId: 'block', set: 2, count: 2, reserved: 1 },
+        { questionId: 'block', set: 3, count: 0, reserved: 0 },
+        { questionId: 'block', set: 4, count: 1, reserved: 0 },
+      ],
+      planRows: [],
+    }
     setOnline(false)
     render(<FillPage surveyId="survey-2" />)
 

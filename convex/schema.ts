@@ -61,15 +61,19 @@ export default defineSchema({
     .index('by_questionnaire', ['questionnaireId'])
     .index('by_serial', ['questionnaireId', 'serial']),
 
-  // Cards handed to an interview that is still going on (balanced drawing).
-  // `responses.drawCards` writes a row per choice-experiment block, counts it
-  // as used so no other tablet gets the same cards, and `responses.submit`
-  // removes it: from then on the response itself is what counts.
+  // Cards handed to an interview that is still going on (balanced drawing, or
+  // one row of the creator's scenario plan). `responses.drawCards` writes a
+  // row per choice-experiment block, counts it as used so no other tablet
+  // gets the same cards, and `responses.submit` removes it: from then on the
+  // response itself is what counts.
   cardDraws: defineTable({
     questionnaireId: v.string(),
     responseId: v.string(),
     questionId: v.string(),
     sets: v.array(v.number()),
+    // Which row of the block's scenario plan these cards came from, when the
+    // block follows a plan. Absent on balanced draws.
+    planRow: v.optional(v.number()),
     drawnAt: v.number(),
   })
     .index('by_questionnaire', ['questionnaireId'])

@@ -34,6 +34,8 @@ function encodeRecord<T>(record: Record<string, T> | undefined) {
 function encodeAnswer(value: AnswerValue): unknown {
   if (isChoiceExperimentAnswer(value)) {
     return {
+      // The plan row travels as it is: a plain number the validators accept.
+      ...(value.planRow === undefined ? {} : { planRow: value.planRow }),
       scenarios: value.scenarios.map(({ levels, choices, other, ...scenario }) => ({
         ...scenario,
         levels: encodeRecord(levels),
@@ -58,6 +60,7 @@ export function encodeAnswers(answers: Record<string, AnswerValue>): Record<stri
 function decodeAnswer(value: unknown): AnswerValue {
   if (isChoiceExperimentAnswer(value)) {
     return {
+      ...(value.planRow === undefined ? {} : { planRow: value.planRow }),
       scenarios: value.scenarios.map(({ levels, choices, other, ...scenario }) => ({
         ...scenario,
         levels: fromPairs(levels),

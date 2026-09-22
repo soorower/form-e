@@ -19,6 +19,7 @@ import {
 } from '#/lib/questionnaire/export'
 import { XLSX_MIME, buildResponsesWorkbook } from '#/lib/questionnaire/export-xlsx'
 import { LANGUAGE_LABELS } from '#/lib/questionnaire/factory'
+import { activeRespondentFields } from '#/lib/questionnaire/respondent'
 import type { Lang, Questionnaire, SurveyResponse } from '#/lib/questionnaire/types'
 import { UNNAMED } from '#/lib/team/stats'
 import { cn } from '#/lib/utils'
@@ -88,6 +89,10 @@ export function ResponsesPanel({ questionnaire }: ResponsesPanelProps) {
     enumerator === null ? rows : responsesToRows(questionnaire, responses, lang),
   )
   const hasChoiceBlock = questionnaire.questions.some((q) => q.type === 'choice_experiment')
+  // Only worth a column in the latest-submissions table when it was collected.
+  const showsRespondent = activeRespondentFields(questionnaire).some(
+    (field) => field.key === 'name',
+  )
 
   function showEnumerator(name: string | null) {
     // Clicking the chosen name again goes back to everyone.
@@ -256,6 +261,7 @@ export function ResponsesPanel({ questionnaire }: ResponsesPanelProps) {
                     <TableRow className="hover:bg-transparent">
                       <TableHead className="h-8">Survey no.</TableHead>
                       <TableHead className="h-8">Enumerator</TableHead>
+                      {showsRespondent && <TableHead className="h-8">Respondent</TableHead>}
                       <TableHead className="h-8">Submitted</TableHead>
                       <TableHead className="h-8">Language</TableHead>
                       <TableHead className="h-8 text-right">Answered</TableHead>
@@ -275,6 +281,11 @@ export function ResponsesPanel({ questionnaire }: ResponsesPanelProps) {
                             </span>
                           )}
                         </TableCell>
+                        {showsRespondent && (
+                          <TableCell className="py-1">
+                            {response.respondent?.name?.trim() || '—'}
+                          </TableCell>
+                        )}
                         <TableCell className="py-1 text-muted-foreground">
                           {new Date(response.submittedAt).toLocaleString()}
                         </TableCell>

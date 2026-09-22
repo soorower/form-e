@@ -95,3 +95,25 @@ describe('decodeResponse', () => {
     expect(decodeResponse({ ...old, answers: undefined as never }).answers).toEqual({})
   })
 })
+
+describe('scenario plan row', () => {
+  it('survives the round trip, and is left out when the block drew its own cards', () => {
+    const planned = {
+      block: {
+        planRow: 14,
+        scenarios: [{ set: 3, levels: { 'ভ্রমণ ব্যয়_A': '১২০০ টাকা' }, choice: 'A' }],
+      },
+    }
+    const encoded = encodeAnswers(planned as never)
+    const answer = (encoded.block as { planRow: number; scenarios: { levels: unknown }[] })
+    expect(answer.planRow).toBe(14)
+    // The Bangla column name still travels as pairs; the plan row does not.
+    expect(Array.isArray(answer.scenarios[0].levels)).toBe(true)
+
+    const decoded = decodeResponse({ answers: encoded } as never)
+    expect(decoded.answers.block).toEqual(planned.block)
+
+    const drawn = { block: { scenarios: [{ set: 1, levels: { Cost_A: '100' }, choice: '' }] } }
+    expect(encodeAnswers(drawn as never).block).not.toHaveProperty('planRow')
+  })
+})

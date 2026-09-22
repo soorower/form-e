@@ -277,3 +277,174 @@ describe('responses of one enumerator', () => {
     )
   })
 })
+
+describe('multiple-choice answers', () => {
+  /** A survey whose one question is "tick every mode you used". */
+  function withModes(): Questionnaire {
+    const modes = createQuestion('multi_choice')
+    if (modes.type !== 'multi_choice') throw new Error('expected multiple choice')
+    modes.id = 'modes'
+    modes.label = { en: 'Modes used', bn: '' }
+    modes.options = [
+      { id: 'bus', label: { en: 'Bus', bn: 'বাস' } },
+      { id: 'train', label: { en: 'Train', bn: 'ট্রেন' } },
+      { id: 'car', label: { en: 'Car', bn: 'কার' } },
+    ]
+    return { ...createQuestionnaire(), questions: [modes] }
+  }
+
+  const ticked = (id: string, modes: string[]): SurveyResponse => ({
+    id,
+    questionnaireId: 'q',
+    serial: 1,
+    surveyNumber: 'M-001',
+    enumerator: 'Nawal',
+    language: 'en',
+    submittedAt: Date.UTC(2026, 8, 10),
+    answers: { modes },
+  })
+
+  it('gives every selection its own column', () => {
+    const questionnaire = withModes()
+    const rows = responsesToRows(questionnaire, [ticked('r1', ['bus', 'car'])])
+    expect(rows[0]['1. Modes used (1)']).toBe('Bus')
+    expect(rows[0]['1. Modes used (2)']).toBe('Car')
+    expect(exportColumns(questionnaire, rows)).toContain('1. Modes used (2)')
+  })
+
+  it('numbers the columns in the question order, not the tapping order', () => {
+    const rows = responsesToRows(withModes(), [ticked('r1', ['car', 'bus'])])
+    expect(rows[0]['1. Modes used (1)']).toBe('Bus')
+    expect(rows[0]['1. Modes used (2)']).toBe('Car')
+  })
+
+  it('makes as many columns as the widest answer needs, and leaves the rest blank', () => {
+    const questionnaire = withModes()
+    const rows = responsesToRows(questionnaire, [
+      ticked('r1', ['bus']),
+      ticked('r2', ['bus', 'train', 'car']),
+    ])
+    const columns = exportColumns(questionnaire, rows)
+    expect(columns.filter((column) => column.startsWith('1. Modes used'))).toEqual([
+      '1. Modes used (1)',
+      '1. Modes used (2)',
+      '1. Modes used (3)',
+    ])
+    expect(rows[0]['1. Modes used (2)']).toBe('')
+    expect(rows[1]['1. Modes used (3)']).toBe('Car')
+  })
+
+  it('keeps every selection when options were deleted after the responses came in', () => {
+    const questionnaire = withModes()
+    const collected = [ticked('r1', ['bus', 'train', 'car'])]
+    // The creator later cuts the question down to one option. The two answers
+    // that no longer have an option must still reach the file, under their id.
+    const modes = questionnaire.questions[0]
+    if (modes.type !== 'multi_choice') throw new Error('expected multiple choice')
+    const trimmed: Questionnaire = {
+      ...questionnaire,
+      questions: [{ ...modes, options: [{ id: 'bus', label: text('Bus') }] }],
+    }
+    const rows = responsesToRows(trimmed, collected)
+    expect(exportColumns(trimmed, rows).filter((c) => c.startsWith('1. Modes used'))).toHaveLength(3)
+    expect(rows[0]['1. Modes used (1)']).toBe('Bus')
+    expect(rows[0]['1. Modes used (2)']).toBe('train')
+    expect(rows[0]['1. Modes used (3)']).toBe('car')
+  })
+
+  it('keeps one column when nobody ticked anything', () => {
+    const questionnaire = withModes()
+    const rows = responsesToRows(questionnaire, [ticked('r1', [])])
+    expect(exportColumns(questionnaire, rows).filter((c) => c.startsWith('1. Modes used'))).toEqual([
+      '1. Modes used (1)',
+    ])
+  })
+})
+
+describe('respondent details', () => {
+  function withDetails(): Questionnaire {
+    const trips = createQuestion('short_text')
+    trips.id = 'trips'
+    trips.label = { en: 'Trips per week', bn: '' }
+    return {
+      ...createQuestionnaire(),
+      questions: [trips],
+      respondent: {
+        fields: [
+          { key: 'name', required: true },
+          { key: 'phone', required: false },
+        ],
+        note: text(),
+      },
+    }
+  }
+
+  const withRespondent: SurveyResponse = {
+    id: 'r1',
+    questionnaireId: 'q',
+    serial: 1,
+    surveyNumber: 'R-001',
+    enumerator: 'Nawal',
+    language: 'en',
+    respondent: { name: 'Karim Uddin', phone: '01711111111' },
+    submittedAt: Date.UTC(2026, 8, 10),
+    answers: { trips: '3' },
+  }
+
+  it('puts the details asked for right after the enumerator', () => {
+    const questionnaire = withDetails()
+    const rows = responsesToRows(questionnaire, [withRespondent])
+    expect(exportColumns(questionnaire, rows).slice(0, 5)).toEqual([
+      'Response ID',
+      'Survey no.',
+      'Enumerator',
+      'Respondent name',
+      'Respondent phone',
+    ])
+    expect(rows[0]['Respondent name']).toBe('Karim Uddin')
+  })
+
+  it('keeps the column for a detail left blank, and none for details not asked for', () => {
+    const questionnaire = withDetails()
+    const rows = responsesToRows(questionnaire, [
+      { ...withRespondent, respondent: { name: 'Karim Uddin' } },
+    ])
+    expect(rows[0]['Respondent phone']).toBe('')
+    expect(exportColumns(questionnaire, rows)).not.toContain('Respondent email')
+  })
+
+  it('adds no respondent columns to a survey that asks for none', () => {
+    const questionnaire = { ...withDetails(), respondent: { fields: [], note: text() } }
+    const rows = responsesToRows(questionnaire, [withRespondent])
+    expect(exportColumns(questionnaire, rows)).not.toContain('Respondent name')
+  })
+})
+
+describe('scenario plan in the export', () => {
+  it('records which plan row the interview was given, beside the card set', () => {
+    const questionnaire = buildQuestionnaire()
+    const planned: SurveyResponse = {
+      ...response,
+      answers: {
+        ...response.answers,
+        block: {
+          planRow: 14,
+          scenarios: [
+            { set: 4, levels: { Time_A: '5 Hours' }, choice: 'B' },
+            { set: 1, levels: { Time_A: '5 Hours' }, choice: 'A' },
+          ],
+        },
+      },
+    }
+    const rows = responsesToRows(questionnaire, [planned])
+    expect(rows.map((row) => row['Plan row'])).toEqual([14, 14])
+    const columns = exportColumns(questionnaire, rows)
+    expect(columns.indexOf('Plan row')).toBeLessThan(columns.indexOf('Scenario'))
+  })
+
+  it('leaves the column out for a block that draws its own cards', () => {
+    const questionnaire = buildQuestionnaire()
+    const rows = responsesToRows(questionnaire, [response])
+    expect(exportColumns(questionnaire, rows)).not.toContain('Plan row')
+  })
+})

@@ -7,8 +7,13 @@ import { Input } from '#/components/ui/input'
 import { Label } from '#/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '#/components/ui/select'
 import { LANGUAGES, LANGUAGE_LABELS, formatSurveyNumber } from '#/lib/questionnaire/factory'
+import {
+  RESPONDENT_FIELDS,
+  activeRespondentFields,
+  createRespondentInfo,
+} from '#/lib/questionnaire/respondent'
 import { FORM_TEXT_DEFAULTS } from '#/lib/questionnaire/text-style'
-import type { Lang, Questionnaire } from '#/lib/questionnaire/types'
+import type { Lang, Questionnaire, RespondentFieldKey } from '#/lib/questionnaire/types'
 import { LocalizedInput } from './LocalizedInput'
 
 interface FormSettingsProps {
@@ -65,6 +70,31 @@ export function FormSettings({ questionnaire, onChange }: FormSettingsProps) {
     onChange({
       languages: next,
       defaultLanguage: next.includes(defaultLanguage) ? defaultLanguage : next[0],
+    })
+  }
+
+  const respondent = questionnaire.respondent ?? createRespondentInfo()
+  const asked = activeRespondentFields(questionnaire)
+  const isAsked = (key: RespondentFieldKey) => asked.some((field) => field.key === key)
+
+  /** Switches one respondent detail on or off, keeping whether it is required. */
+  function toggleRespondentField(key: RespondentFieldKey, enabled: boolean) {
+    onChange({
+      respondent: {
+        ...respondent,
+        fields: enabled
+          ? [...respondent.fields.filter((field) => field.key !== key), { key, required: false }]
+          : respondent.fields.filter((field) => field.key !== key),
+      },
+    })
+  }
+
+  function setRespondentRequired(key: RespondentFieldKey, required: boolean) {
+    onChange({
+      respondent: {
+        ...respondent,
+        fields: respondent.fields.map((field) => (field.key === key ? { ...field, required } : field)),
+      },
     })
   }
 
@@ -319,6 +349,68 @@ export function FormSettings({ questionnaire, onChange }: FormSettingsProps) {
               remembers it. Leave the list empty to let them type a name instead.
             </p>
           </div>
+        </div>
+
+        <div className="space-y-4 border-t border-border pt-6">
+          <div>
+            <Label>
+              Respondent information{' '}
+              <span className="font-normal text-muted-foreground">(optional)</span>
+            </Label>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Details about the respondent themselves, asked once above the questions rather than
+              as numbered questions. Each gets its own export column. Switch on only what the
+              survey really needs: these are personal details, and they leave the app in every
+              download.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            {RESPONDENT_FIELDS.map((field) => {
+              const on = isAsked(field.key)
+              const required = asked.some(
+                (chosen) => chosen.key === field.key && chosen.required,
+              )
+              return (
+                <div key={field.key} className="flex flex-wrap items-center gap-x-6 gap-y-1">
+                  <Label className="min-w-32 cursor-pointer font-normal">
+                    <Checkbox
+                      checked={on}
+                      onCheckedChange={(checked) => toggleRespondentField(field.key, checked === true)}
+                    />
+                    {field.label.en}
+                  </Label>
+                  {on && (
+                    <Label className="cursor-pointer text-xs font-normal text-muted-foreground">
+                      <Checkbox
+                        checked={required}
+                        onCheckedChange={(checked) =>
+                          setRespondentRequired(field.key, checked === true)
+                        }
+                      />
+                      Must be filled in
+                    </Label>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+
+          {asked.length > 0 && (
+            <div className="space-y-2">
+              <Label>
+                Note above the fields{' '}
+                <span className="font-normal text-muted-foreground">(optional)</span>
+              </Label>
+              <LocalizedInput
+                multiline
+                value={respondent.note}
+                onChange={(note) => onChange({ respondent: { ...respondent, note } })}
+                languages={languages}
+                placeholder="Why the details are asked and what happens to them"
+              />
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>

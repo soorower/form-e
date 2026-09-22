@@ -11,11 +11,23 @@ import {
   questionNumbers,
   uid,
 } from '#/lib/questionnaire/factory'
+import {
+  activeRespondentFields,
+  missingRespondentFields,
+  respondentToStore,
+} from '#/lib/questionnaire/respondent'
 import { FORM_TEXT_DEFAULTS, localizedStyleClass } from '#/lib/questionnaire/text-style'
-import type { AnswerValue, Lang, Questionnaire, SurveyResponse } from '#/lib/questionnaire/types'
+import type {
+  AnswerValue,
+  Lang,
+  Questionnaire,
+  RespondentDetails,
+  SurveyResponse,
+} from '#/lib/questionnaire/types'
 import type { CardExposure } from '#/lib/questionnaire/cards'
 import { cn } from '#/lib/utils'
 import { QuestionField, questionDomId, type AnswerUpdate } from './QuestionField'
+import { RESPONDENT_DOM_ID, RespondentFields } from './RespondentFields'
 
 /** Who is collecting this response and which number it will get. */
 export interface ResponseMeta {
@@ -34,8 +46,15 @@ export interface ResponseMeta {
 /** Per choice-experiment question id: how often each card set has been shown. */
 export type QuestionnaireCardExposure = Record<string, CardExposure>
 
-/** Per choice-experiment question id: the cards (set numbers) the server handed this interview. */
-export type QuestionnaireCardDraws = Record<string, number[]>
+/** Per choice-experiment question id: how often each scenario-plan row has been used. */
+export type QuestionnairePlanExposure = Record<string, CardExposure>
+
+/**
+ * Per choice-experiment question id: what the server handed this interview —
+ * the cards (set numbers, in order) and, for a block that follows the
+ * creator's scenario plan, the row those cards came from.
+ */
+export type QuestionnaireCardDraws = Record<string, { sets: number[]; planRow?: number }>
 
 /** What became of a submitted response. */
 export interface SubmitOutcome {
@@ -57,6 +76,8 @@ interface QuestionnaireRendererProps {
    * yet; leave undefined only while it is still loading.
    */
   cardExposure?: QuestionnaireCardExposure
+  /** The same counts for the rows of a block's scenario plan. */
+  planExposure?: QuestionnairePlanExposure
   /**
    * Cards the server reserved for this interview (`responses.drawCards`).
    * A balanced block shows these; blocks without an entry draw for
@@ -93,6 +114,7 @@ export function QuestionnaireRenderer({
   questionnaire,
   meta,
   cardExposure,
+  planExposure,
   cardDraws,
   responseId: givenResponseId,
   onRestart,
@@ -101,6 +123,8 @@ export function QuestionnaireRenderer({
 }: QuestionnaireRendererProps) {
   const [chosenLang, setChosenLang] = useState<Lang | null>(null)
   const [answers, setAnswers] = useState<Record<string, AnswerValue>>({})
+  // The respondent's own details, for the fields this survey asks for.
+  const [respondent, setRespondent] = useState<RespondentDetails>({})
   const [attempted, setAttempted] = useState(false)
   const [submitted, setSubmitted] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -132,6 +156,15 @@ export function QuestionnaireRenderer({
     .filter((question) => question.required && !isAnswered(question, answers[question.id]))
     .map((question) => question.id)
 
+  // The respondent's own details, when the survey asks for any. In steps mode
+  // they are the first step, before question 1; on one page they sit under the
+  // header. Either way they are not questions and take no question number.
+  const respondentFields = activeRespondentFields(questionnaire)
+  const asksRespondent = respondentFields.length > 0
+  const missingRespondent = missingRespondentFields(questionnaire, respondent)
+  // In steps mode the details take step 0, so a question's step is one higher.
+  const stepOffset = stepped && asksRespondent ? 1 : 0
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setAttempted(true)
@@ -140,11 +173,23 @@ export function QuestionnaireRenderer({
       window.scrollTo({ top: 0, behavior: 'smooth' })
       return
     }
+    if (missingRespondent.length > 0) {
+      if (stepped) {
+        setStep(0)
+        setStepAttempted(true)
+        window.scrollTo({ top: 0, behavior: 'smooth' })
+        return
+      }
+      document
+        .getElementById(RESPONDENT_DOM_ID)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      return
+    }
     if (missing.length > 0) {
       if (stepped) {
         // Go back to the first unanswered required question.
         const index = questionnaire.questions.findIndex((question) => question.id === missing[0])
-        if (index >= 0) setStep(index)
+        if (index >= 0) setStep(index + stepOffset)
         setStepAttempted(true)
         window.scrollTo({ top: 0, behavior: 'smooth' })
         return
@@ -170,6 +215,7 @@ export function QuestionnaireRenderer({
         surveyNumber: meta?.surveyNumber ?? '',
         enumerator,
         language: lang,
+        respondent: respondentToStore(questionnaire, respondent),
         answers,
         submittedAt: Date.now(),
       })
@@ -190,6 +236,7 @@ export function QuestionnaireRenderer({
   function reset() {
     responseId.current = null
     setAnswers({})
+    setRespondent({})
     setAttempted(false)
     setSubmitting(false)
     setPendingUpload(false)
@@ -201,8 +248,11 @@ export function QuestionnaireRenderer({
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
-  const stepCount = questionnaire.questions.length
-  const current = stepped ? questionnaire.questions[Math.min(step, stepCount - 1)] : undefined
+  const stepCount = questionnaire.questions.length + stepOffset
+  const questionStep = Math.min(step, stepCount - 1) - stepOffset
+  // Undefined on the respondent-details step, which shows no question.
+  const current = stepped && questionStep >= 0 ? questionnaire.questions[questionStep] : undefined
+  const onRespondentStep = stepped && stepOffset === 1 && step === 0
 
   function goTo(index: number) {
     setStep(Math.max(0, Math.min(stepCount - 1, index)))
@@ -210,8 +260,16 @@ export function QuestionnaireRenderer({
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
-  /** Next only moves on when a required question has an answer. */
+  /** Next only moves on when the step on screen is complete. */
   function next() {
+    if (onRespondentStep) {
+      if (missingRespondent.length > 0) {
+        setStepAttempted(true)
+        return
+      }
+      goTo(step + 1)
+      return
+    }
     if (!current) return
     if (current.required && !isAnswered(current, answers[current.id])) {
       setStepAttempted(true)
@@ -435,12 +493,13 @@ export function QuestionnaireRenderer({
         </p>
       )}
 
-      {stepped && current ? (
+      {stepped && (current || onRespondentStep) ? (
         <>
           <div className="space-y-2 px-1">
             <div className="flex items-center justify-between text-sm text-muted-foreground">
               <span>
-                {t('Question', 'প্রশ্ন')}{' '}
+                {/* The details step shows no question, so it counts as a step. */}
+                {onRespondentStep ? t('Step', 'ধাপ') : t('Question', 'প্রশ্ন')}{' '}
                 <span className="font-semibold text-foreground">{step + 1}</span> / {stepCount}
               </span>
               <span>{Math.round(((step + 1) / stepCount) * 100)}%</span>
@@ -453,24 +512,36 @@ export function QuestionnaireRenderer({
             </div>
           </div>
 
-          <QuestionField
-            key={current.id}
-            question={current}
-            number={numbers[step]}
-            lang={lang}
-            value={answers[current.id]}
-            onChange={(next: AnswerUpdate) =>
-              setAnswers((all) => ({
-                ...all,
-                [current.id]: typeof next === 'function' ? next(all[current.id]) : next,
-              }))
-            }
-            invalid={(attempted || stepAttempted) && missing.includes(current.id)}
-            exposure={cardExposure ? (cardExposure[current.id] ?? {}) : undefined}
-            assignedSets={cardDraws?.[current.id]}
-          />
+          {current ? (
+            <QuestionField
+              key={current.id}
+              question={current}
+              number={numbers[questionStep]}
+              lang={lang}
+              value={answers[current.id]}
+              onChange={(next: AnswerUpdate) =>
+                setAnswers((all) => ({
+                  ...all,
+                  [current.id]: typeof next === 'function' ? next(all[current.id]) : next,
+                }))
+              }
+              invalid={(attempted || stepAttempted) && missing.includes(current.id)}
+              exposure={cardExposure ? (cardExposure[current.id] ?? {}) : undefined}
+              planExposure={planExposure ? (planExposure[current.id] ?? {}) : undefined}
+              assignedSets={cardDraws?.[current.id]?.sets}
+              assignedPlanRow={cardDraws?.[current.id]?.planRow}
+            />
+          ) : (
+            <RespondentFields
+              questionnaire={questionnaire}
+              lang={lang}
+              value={respondent}
+              onChange={setRespondent}
+              missing={attempted || stepAttempted ? missingRespondent : []}
+            />
+          )}
 
-          {stepAttempted && missing.includes(current.id) && (
+          {current && stepAttempted && missing.includes(current.id) && (
             <p className="text-center text-sm font-medium text-destructive">
               {t('This question needs an answer.', 'এই প্রশ্নের উত্তর দিতে হবে।')}
             </p>
@@ -501,28 +572,51 @@ export function QuestionnaireRenderer({
           </div>
         </>
       ) : (
-        questions.map((question, index) => (
-          <QuestionField
-            key={question.id}
-            question={question}
-            number={numbers[index]}
-            lang={lang}
-            value={answers[question.id]}
-            onChange={(next: AnswerUpdate) =>
-              setAnswers((current) => ({
-                ...current,
-                [question.id]: typeof next === 'function' ? next(current[question.id]) : next,
-              }))
-            }
-            invalid={attempted && missing.includes(question.id)}
-            exposure={cardExposure ? (cardExposure[question.id] ?? {}) : undefined}
-            assignedSets={cardDraws?.[question.id]}
-          />
-        ))
+        <>
+          {asksRespondent && (
+            <RespondentFields
+              questionnaire={questionnaire}
+              lang={lang}
+              value={respondent}
+              onChange={setRespondent}
+              missing={attempted ? missingRespondent : []}
+            />
+          )}
+          {questions.map((question, index) => (
+            <QuestionField
+              key={question.id}
+              question={question}
+              number={numbers[index]}
+              lang={lang}
+              value={answers[question.id]}
+              onChange={(next: AnswerUpdate) =>
+                setAnswers((current) => ({
+                  ...current,
+                  [question.id]: typeof next === 'function' ? next(current[question.id]) : next,
+                }))
+              }
+              invalid={attempted && missing.includes(question.id)}
+              exposure={cardExposure ? (cardExposure[question.id] ?? {}) : undefined}
+              planExposure={planExposure ? (planExposure[question.id] ?? {}) : undefined}
+              assignedSets={cardDraws?.[question.id]?.sets}
+              assignedPlanRow={cardDraws?.[question.id]?.planRow}
+            />
+          ))}
+        </>
       )}
 
-      {questions.length > 0 && !stepped && (
+      {/* Also when the form only collects respondent details: without this
+          such a form had no way to submit. */}
+      {(questions.length > 0 || asksRespondent) && !stepped && (
         <div className="flex flex-col items-center gap-3 pt-2">
+          {attempted && missingRespondent.length > 0 && (
+            <p className="text-sm font-medium text-destructive">
+              {t(
+                'Please fill in the respondent details marked above.',
+                'অনুগ্রহ করে উপরে চিহ্নিত উত্তরদাতার তথ্যগুলো পূরণ করুন।',
+              )}
+            </p>
+          )}
           {attempted && missing.length > 0 && (
             <p className="text-sm font-medium text-destructive">
               {t(

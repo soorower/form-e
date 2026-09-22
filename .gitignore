@@ -13,3 +13,6 @@ __unconfig*
 todos.json
 .vercel
 .env*
+
+# Rough working tables (scripts/card_tables.py); never committed
+rough/

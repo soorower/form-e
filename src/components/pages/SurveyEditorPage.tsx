@@ -140,6 +140,8 @@ export function SurveyEditorPage({ surveyId }: { surveyId: string }) {
               surveyNumber: formatSurveyNumber(questionnaire.surveyCodePrefix, nextSerial),
               enumerator: activeEnumerators(questionnaire)[0] ?? '',
             }}
+            // The preview reserves nothing: no card counts, and no plan-row
+            // counts either, so a planned block just shows one row at random.
             cardExposure={{}}
           />
         </TabsContent>

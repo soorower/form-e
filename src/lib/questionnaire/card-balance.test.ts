@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   pickLeastUsed,
   tallyAnswers,
+  tallyPlanRow,
   tallySets,
   type CardCounts,
 } from '../../../convex/cardBalance'
@@ -102,5 +103,46 @@ describe('scenariosFromSets', () => {
       { set: 2, levels: { Time_A: '9 Hours' }, choice: '' },
       { set: 1, levels: { Time_A: '5 Hours' }, choice: '' },
     ])
+  })
+})
+
+describe('scenario plan rows on the server', () => {
+  it('counts the plan row a response was given, separately from its cards', () => {
+    const cards = new Map<string, CardCounts>()
+    const rows = new Map<string, CardCounts>()
+    tallyAnswers(
+      {
+        block: { planRow: 2, scenarios: [{ set: 3 }, { set: 1 }, { set: 3 }] },
+        // A block that drew its own cards has no plan row to count.
+        other: { scenarios: [{ set: 7 }] },
+      },
+      cards,
+      rows,
+    )
+    tallyAnswers({ block: { planRow: 2, scenarios: [{ set: 3 }] } }, cards, rows)
+
+    expect(rows.get('block')).toEqual(new Map([[2, 2]]))
+    expect(rows.has('other')).toBe(false)
+    expect(cards.get('block')).toEqual(
+      new Map([
+        [3, 3],
+        [1, 1],
+      ]),
+    )
+  })
+
+  it('hands out the row least used, counting interviews going on right now', () => {
+    const held = new Map<string, CardCounts>()
+    // Rows 1 and 2 are recorded once each; row 3 is on another tablet now.
+    const usage: CardCounts = new Map([
+      [1, 1],
+      [2, 1],
+    ])
+    tallyPlanRow('block', 3, held)
+    for (const [row, count] of held.get('block') ?? []) {
+      usage.set(row, (usage.get(row) ?? 0) + count)
+    }
+    // Row 4 has never gone out, so it is next — not row 3, which is reserved.
+    expect(pickLeastUsed([1, 2, 3, 4], 1, usage)).toEqual([4])
   })
 })

@@ -1,4 +1,4 @@
-import type { AnswerValue, Lang } from './types'
+import type { AnswerValue, Lang, RespondentDetails } from './types'
 
 /**
  * Responses waiting to reach the server. The fill page writes a response here
@@ -16,6 +16,8 @@ export interface PendingResponse {
   questionnaireId: string
   enumerator: string
   language: Lang
+  /** Only present when the survey asks the respondent for their own details. */
+  respondent?: RespondentDetails
   answers: Record<string, AnswerValue>
   queuedAt: number
 }

@@ -1,7 +1,8 @@
 import type * as ExcelJSTypes from 'exceljs'
 import { columnKey } from './cards'
-import type { ExportRow } from './export'
+import { selectionColumn, type ExportRow } from './export'
 import { blockQuestionCount, pickText, questionNumbers, questionTypeLabel } from './factory'
+import { followsPlan, planRows } from './scenario-plan'
 import type { ChoiceExperimentQuestion, Lang, Questionnaire } from './types'
 
 type ExcelJSModule = typeof ExcelJSTypes
@@ -49,9 +50,9 @@ function fitColumns(sheet: ExcelJSTypes.Worksheet, min = 8, max = 60) {
 }
 
 /**
- * Builds a workbook with three sheets: the flattened responses (same rows as
- * the CSV), the design cards of every choice block, and the question list.
- * Returns the .xlsx file contents.
+ * Builds a workbook: the flattened responses (same rows as the CSV), the design
+ * cards of every choice block, the scenario plan of any block that follows
+ * one, and the question list. Returns the .xlsx file contents.
  */
 export async function buildResponsesWorkbook(
   questionnaire: Questionnaire,
@@ -112,12 +113,51 @@ export async function buildResponsesWorkbook(
     fitColumns(cards)
   }
 
+  const planned = blocks.filter(followsPlan)
+  if (planned.length > 0) {
+    // The creator's own allocation, so the file they download says which cards
+    // each plan row hands out and can be checked against the Plan row column.
+    const sheet = workbook.addWorksheet('Scenario plan')
+    const numbers = questionNumbers(questionnaire.questions)
+    planned.forEach((block, blockIndex) => {
+      const index = questionnaire.questions.indexOf(block)
+      const rows = planRows(block)
+      const title = sheet.addRow([
+        `${pickText(block.label, lang) || `Block ${blockIndex + 1}`} (questions ${numbers[index]}–${
+          numbers[index] + blockQuestionCount(block) - 1
+        }, ${rows.length} plan rows). The "Plan row" column of the Responses sheet says which row an interview was given.`,
+      ])
+      title.font = { bold: true, size: 12 }
+      const widest = Math.max(1, ...rows.map((row) => row.sets.length))
+      styleHeader(
+        sheet.addRow([
+          'Plan row',
+          ...Array.from({ length: widest }, (_unused, slot) => `Scenario ${slot + 1}`),
+        ]),
+      )
+      for (const row of rows) {
+        sheet.addRow([
+          row.row,
+          ...Array.from({ length: widest }, (_unused, slot) => row.sets[slot] ?? null),
+        ])
+      }
+      sheet.addRow([])
+    })
+    fitColumns(sheet)
+  }
+
   const questions = workbook.addWorksheet('Questions')
   styleHeader(questions.addRow(['No.', 'Type', 'Question (English)', 'Question (বাংলা)', 'Details']))
   const numbers = questionNumbers(questionnaire.questions)
   questionnaire.questions.forEach((question, index) => {
     let details = ''
-    if ('options' in question) {
+    if (question.type === 'multi_choice') {
+      // Several selections, so the export gives each one its own column.
+      const heading = `${numbers[index]}. ${pickText(question.label, lang)}`
+      details = `Tick all that apply: ${question.options
+        .map((option) => pickText(option.label, lang))
+        .join('; ')} | One column per selection: "${selectionColumn(heading, 0)}", "${selectionColumn(heading, 1)}", …`
+    } else if ('options' in question) {
       details = question.options.map((option) => pickText(option.label, lang)).join('; ')
     } else if (question.type === 'table') {
       details = `Rows: ${question.rows.map((row) => pickText(row.label, lang)).join('; ')} | Columns: ${question.columns.map((column) => pickText(column.label, lang)).join('; ')}`
@@ -146,6 +186,11 @@ export async function buildResponsesWorkbook(
 function blockSummary(question: ChoiceExperimentQuestion) {
   const alternatives = question.alternatives.map((a) => `${a.key}=${a.label.en || a.key}`).join(', ')
   const attributes = question.attributes.map((a) => a.key).join(', ')
+  const handedOut = followsPlan(question)
+    ? `${planRows(question).length} rows of the scenario plan (see the Scenario plan sheet)`
+    : question.drawMode === 'balanced'
+      ? 'cards shared out evenly'
+      : 'cards drawn at random'
   // "Choice", "Choice 2", … name the export columns each prompt fills.
   const prompts = question.prompts
     .map((prompt, index) => {
@@ -157,7 +202,7 @@ function blockSummary(question: ChoiceExperimentQuestion) {
       return `${column}: ${prompt.text.en || prompt.text.bn} (${answers})`
     })
     .join(' | ')
-  return `${question.cards.length} cards, ${question.scenariosPerRespondent} per respondent | Alternatives: ${alternatives} | Attributes: ${attributes} | ${prompts}`
+  return `${question.cards.length} cards, ${question.scenariosPerRespondent} per respondent, ${handedOut} | Alternatives: ${alternatives} | Attributes: ${attributes} | ${prompts}`
 }
 
 export const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'

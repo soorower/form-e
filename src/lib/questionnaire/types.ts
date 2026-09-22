@@ -162,12 +162,28 @@ export interface ChoicePrompt {
 }
 
 /**
- * How cards are drawn for each respondent. 'balanced' hands every interview
- * the cards used least so far (the server counts across all tablets, see
- * `responses.drawCards`), so over the survey's `responseTarget` every card is
- * shown equally often, give or take one.
+ * How cards are drawn for each respondent.
+ * - 'balanced' hands every interview the cards used least so far (the server
+ *   counts across all tablets, see `responses.drawCards`), so over the
+ *   survey's `responseTarget` every card is shown equally often, give or take
+ *   one.
+ * - 'plan' follows `scenarioPlan`: the creator's own allocation sheet decides
+ *   which cards go together, and the server hands out the plan's least-used
+ *   row. Nothing is drawn.
  */
-export type CardDrawMode = 'random' | 'balanced'
+export type CardDrawMode = 'random' | 'balanced' | 'plan'
+
+/**
+ * One row of the creator's scenario plan: the cards shown to a respondent
+ * assigned this row, in order. `row` is the number in the sheet's first
+ * column (the "Set" of a `Set | Scenario1 | Scenario2 | …` sheet) and is
+ * recorded with the response, so an interview can be traced back to the
+ * planned combination. A card may appear twice in one row if the sheet says so.
+ */
+export interface ScenarioPlanRow {
+  row: number
+  sets: number[]
+}
 
 /** One row of the experimental design: the level shown for every attribute × alternative. */
 export interface ChoiceCard {
@@ -194,6 +210,13 @@ export interface ChoiceExperimentQuestion extends QuestionBase {
   drawMode: CardDrawMode
   cards: ChoiceCard[]
   /**
+   * The creator's own card allocation, used when `drawMode` is 'plan': one
+   * row per respondent group, each naming the cards that respondent sees.
+   * Imported from a sheet laid out `Set | Scenario1 | Scenario2 | …`. Empty
+   * on blocks that let the app draw.
+   */
+  scenarioPlan: ScenarioPlanRow[]
+  /**
    * Display text per language for a raw level string from the cards, e.g.
    * "5 Hours" -> { en: "5 hours", bn: "৫ ঘন্টা" }. Missing entries fall back
    * to the raw text.
@@ -216,6 +239,34 @@ export type Question =
   | ChoiceQuestion
   | TableQuestion
   | ChoiceExperimentQuestion
+
+/**
+ * A contact detail that may be collected once per respondent, before the
+ * questions. All four are optional for the creator to switch on; none is
+ * collected unless they do.
+ */
+export type RespondentFieldKey = 'name' | 'email' | 'phone' | 'address'
+
+/** One respondent detail the survey collects, and whether it must be filled in. */
+export interface RespondentInfoField {
+  key: RespondentFieldKey
+  required: boolean
+}
+
+/**
+ * The respondent's own details, asked once at the top of the form rather than
+ * as ordinary questions, so they stay out of the question numbering and land
+ * in their own export columns. An empty `fields` list (the default) collects
+ * nothing and shows nothing.
+ */
+export interface RespondentInfo {
+  fields: RespondentInfoField[]
+  /** Wording shown under the heading, e.g. why the details are asked. */
+  note: LocalizedText
+}
+
+/** What a respondent typed into the detail fields, by field key. */
+export type RespondentDetails = Partial<Record<RespondentFieldKey, string>>
 
 export interface Questionnaire {
   id: string
@@ -240,6 +291,12 @@ export interface Questionnaire {
    * field is offered instead.
    */
   enumerators: string[]
+  /**
+   * Which of the respondent's own details (name, email, phone, address) the
+   * form asks for. Absent on surveys saved before this existed; the codec
+   * fills in an empty list, which asks for nothing.
+   */
+  respondent: RespondentInfo
   /** The user who created the survey (a Convex users id), set by the server. */
   ownerId?: string
   /**
@@ -284,6 +341,12 @@ export interface ChoiceScenarioAnswer {
 
 export interface ChoiceExperimentAnswer {
   scenarios: ChoiceScenarioAnswer[]
+  /**
+   * The row of the block's `scenarioPlan` these scenarios came from, when the
+   * block follows a plan. Absent on drawn blocks and on responses recorded
+   * before plans existed.
+   */
+  planRow?: number
 }
 
 export type AnswerValue = string | string[] | TableAnswer | ChoiceExperimentAnswer | null
@@ -301,6 +364,11 @@ export interface SurveyResponse {
   surveyorId?: string
   surveyorCode?: string
   language: Lang
+  /**
+   * The respondent's own details, for the fields the survey asks for. Absent
+   * when the survey asks for none.
+   */
+  respondent?: RespondentDetails
   answers: Record<string, AnswerValue>
   submittedAt: number
 }

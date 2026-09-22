@@ -1,4 +1,5 @@
 import { defaultChoiceOptions, defaultPrompt, text } from '#/lib/questionnaire/factory'
+import { createRespondentInfo } from '#/lib/questionnaire/respondent'
 import type {
   ChoiceLayout,
   ChoiceOption,
@@ -65,6 +66,7 @@ function choiceDefaults(question: Record<string, unknown>) {
     attributeHeader: question.attributeHeader ?? text('Attributes', 'বৈশিষ্ট্যসমূহ'),
     referenceColumns: question.referenceColumns ?? [],
     drawMode: question.drawMode ?? 'random',
+    scenarioPlan: question.scenarioPlan ?? [],
     prompts: prompts && prompts.length > 0 ? prompts : legacyPrompts(question, layout),
   }
 }
@@ -110,7 +112,12 @@ export function decodeQuestionnaire(row: unknown): Questionnaire | null | undefi
   const stripped = stripSystemFields<Record<string, unknown>>(row as never)
   if (!stripped) return stripped as null | undefined
   const questions = (stripped.questions as Record<string, unknown>[]) ?? []
-  return { ...stripped, questions: questions.map(decodeQuestion) } as unknown as Questionnaire
+  return {
+    ...stripped,
+    // Surveys saved before respondent details existed ask for none.
+    respondent: stripped.respondent ?? createRespondentInfo(),
+    questions: questions.map(decodeQuestion),
+  } as unknown as Questionnaire
 }
 
 export function decodeQuestionnaires(rows: unknown): Questionnaire[] | undefined {

@@ -1,9 +1,11 @@
 import { OTHER_ANSWER, isChoiceExperimentAnswer, isTableAnswer, scenarioChoice } from './answers'
 import { columnKey } from './cards'
 import { pickText, questionNumbers } from './factory'
+import { activeRespondentFields, respondentColumn } from './respondent'
 import type {
   AnswerValue,
   ChoiceExperimentQuestion,
+  ChoiceQuestion,
   ChoicePrompt,
   Lang,
   Question,
@@ -30,10 +32,69 @@ function plainAnswer(question: Question, value: AnswerValue | undefined, lang: L
   return ''
 }
 
+/** The ids ticked on a multiple-choice question, ignoring anything else. */
+function selectedIds(value: AnswerValue | undefined): string[] {
+  return Array.isArray(value) ? value.filter((id) => typeof id === 'string') : []
+}
+
+/**
+ * A multiple-choice answer in the question's own option order, so the first
+ * column always holds the earliest option ticked rather than whichever was
+ * tapped first. Ids the question no longer has (an option deleted after the
+ * response came in) keep their place at the end.
+ */
+export function orderedSelections(question: ChoiceQuestion, value: AnswerValue | undefined): string[] {
+  const ticked = selectedIds(value)
+  const order = new Map(question.options.map((option, index) => [option.id, index]))
+  const known = ticked.filter((id) => order.has(id))
+  known.sort((a, b) => (order.get(a) ?? 0) - (order.get(b) ?? 0))
+  return [...known, ...ticked.filter((id) => !order.has(id))]
+}
+
+/**
+ * How many columns a multiple-choice question needs: as many as the most
+ * selections any one respondent made, and never fewer than one, so the
+ * question still has a column when nobody ticked anything.
+ *
+ * Driven by the answers alone, so a question with ten options that people only
+ * ever pick two of takes two columns. It is deliberately not capped at the
+ * option count: options deleted after the responses came in would then make
+ * the export quietly drop the selections that no longer have an option.
+ * The Responses tab works the column list out from every response, so a
+ * download narrowed to one enumerator keeps the same layout as the others.
+ */
+export function selectionColumnCount(
+  question: ChoiceQuestion,
+  responses: Pick<SurveyResponse, 'answers'>[],
+): number {
+  let widest = 1
+  for (const response of responses) {
+    widest = Math.max(widest, selectedIds(response.answers[question.id]).length)
+  }
+  return widest
+}
+
+/**
+ * Column heading for the nth selection of a multiple-choice question:
+ * "3. Modes used (1)", "3. Modes used (2)", … One selection per column keeps
+ * every answer on its own, the way a data-entry sheet has study_hr1 and
+ * study_hr2 instead of one cell holding both.
+ */
+export function selectionColumn(heading: string, index: number): string {
+  return `${heading} (${index + 1})`
+}
+
 /** English when the survey has it, since analysis scripts usually expect English headings. */
 export function defaultExportLanguage(questionnaire: Questionnaire): Lang {
   return questionnaire.languages.includes('en') ? 'en' : questionnaire.defaultLanguage
 }
+
+/**
+ * Names the row of the creator's scenario plan an interview was given, beside
+ * the card's own `Set`. The plan's sheet calls it "Set" too, but that name is
+ * already taken here by the design card, so the column says "Plan row".
+ */
+export const PLAN_ROW_COLUMN = 'Plan row'
 
 /** "Choice" for the first prompt under a scenario, "Choice 2", "Choice 3", … for the rest. */
 export function choiceColumn(promptIndex: number): string {
@@ -70,10 +131,11 @@ function choiceText(
 
 /**
  * Flattens responses into analysis-ready rows. Plain questions become one
- * column each; table questions become one column per row × column; a choice
- * experiment produces one output row per scenario shown, carrying the set
- * number, every attribute level, and the answer to each prompt. Responses
- * with no choice scenarios produce a single row.
+ * column each; a multiple-choice question becomes one column per selection;
+ * table questions become one column per row × column; a choice experiment
+ * produces one output row per scenario shown, carrying the set number, every
+ * attribute level, and the answer to each prompt. Responses with no choice
+ * scenarios produce a single row.
  */
 export function responsesToRows(
   questionnaire: Questionnaire,
@@ -82,12 +144,30 @@ export function responsesToRows(
 ): ExportRow[] {
   const numbers = questionNumbers(questionnaire.questions)
   const rows: ExportRow[] = []
+  // Worked out once from the whole batch, so every row carries the same
+  // selection columns and the table is not ragged.
+  const selectionWidths = new Map(
+    questionnaire.questions.flatMap((question) =>
+      question.type === 'multi_choice'
+        ? [[question.id, selectionColumnCount(question, responses)] as const]
+        : [],
+    ),
+  )
+  const respondentFields = activeRespondentFields(questionnaire)
 
   for (const response of responses) {
     const base: ExportRow = {
       'Response ID': response.id,
       'Survey no.': response.surveyNumber,
       Enumerator: response.enumerator,
+      // Only the details this survey asks for, always present as columns so a
+      // respondent who left one blank does not shift the table.
+      ...Object.fromEntries(
+        respondentFields.map((field) => [
+          respondentColumn(field.key),
+          response.respondent?.[field.key] ?? '',
+        ]),
+      ),
       'Submitted at': new Date(response.submittedAt).toISOString(),
       Language: response.language,
     }
@@ -96,6 +176,18 @@ export function responsesToRows(
     questionnaire.questions.forEach((question, index) => {
       const value = response.answers[question.id]
       const heading = `${numbers[index]}. ${pickText(question.label, lang)}`
+
+      if (question.type === 'multi_choice') {
+        // One column per selection: (1) holds the first option ticked, (2) the
+        // second, and so on, rather than one cell holding "a; b".
+        const chosen = orderedSelections(question, value)
+        const width = selectionWidths.get(question.id) ?? 1
+        for (let slot = 0; slot < width; slot += 1) {
+          const id = chosen[slot]
+          base[selectionColumn(heading, slot)] = id ? optionText(question, id, lang) : ''
+        }
+        return
+      }
 
       if (question.type === 'table') {
         const answer = isTableAnswer(value) ? value : { rows: [] }
@@ -120,6 +212,9 @@ export function responsesToRows(
             Block: pickText(question.label, lang),
             // The number of the first question under this scenario's table.
             Question: numbers[index] + scenarioIndex * perScenario,
+            // Which row of the creator's scenario plan this interview was
+            // given; blank on blocks that draw their own cards.
+            ...(answer.planRow === undefined ? {} : { [PLAN_ROW_COLUMN]: answer.planRow }),
             Scenario: scenarioIndex + 1,
             Set: scenario.set,
           }
@@ -161,7 +256,7 @@ export function responsesToRows(
 /** Every column name across the rows, in order of first appearance, with choice columns last. */
 export function exportColumns(questionnaire: Questionnaire, rows: ExportRow[]): string[] {
   const columns: string[] = []
-  const trailing: string[] = ['Block', 'Question', 'Scenario', 'Set']
+  const trailing: string[] = ['Block', 'Question', PLAN_ROW_COLUMN, 'Scenario', 'Set']
   const choices: string[] = ['Choice']
   for (const question of questionnaire.questions) {
     if (question.type !== 'choice_experiment') continue

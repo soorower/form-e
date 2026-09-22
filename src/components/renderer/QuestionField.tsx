@@ -31,6 +31,10 @@ interface QuestionFieldProps {
   exposure?: CardExposure
   /** Cards the server handed this interview for a balanced choice experiment. */
   assignedSets?: number[]
+  /** The scenario-plan row the server gave this interview, for a planned block. */
+  assignedPlanRow?: number
+  /** How often each scenario-plan row has been used, for the planned fallback. */
+  planExposure?: CardExposure
 }
 
 export function questionDomId(id: string) {
@@ -48,6 +52,8 @@ export function QuestionField({
   invalid,
   exposure,
   assignedSets,
+  assignedPlanRow,
+  planExposure,
 }: QuestionFieldProps) {
   if (question.type === 'choice_experiment') {
     return (
@@ -61,6 +67,8 @@ export function QuestionField({
         domId={questionDomId(question.id)}
         exposure={exposure}
         assignedSets={assignedSets}
+        assignedPlanRow={assignedPlanRow}
+        planExposure={planExposure}
       />
     )
   }

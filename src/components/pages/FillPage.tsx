@@ -7,6 +7,7 @@ import {
   QuestionnaireRenderer,
   type QuestionnaireCardDraws,
   type QuestionnaireCardExposure,
+  type QuestionnairePlanExposure,
   type SubmitOutcome,
 } from '#/components/renderer/QuestionnaireRenderer'
 import { useSurveyPaths } from '#/components/auth/area'
@@ -21,6 +22,7 @@ import {
   removeFromOutbox,
   type PendingResponse,
 } from '#/lib/questionnaire/outbox'
+import { followsPlan } from '#/lib/questionnaire/scenario-plan'
 import { getDeviceEnumerator, setDeviceEnumerator } from '#/lib/questionnaire/storage'
 import type { SurveyResponse } from '#/lib/questionnaire/types'
 
@@ -32,9 +34,9 @@ import type { SurveyResponse } from '#/lib/questionnaire/types'
 const SAVE_TIMEOUT_MS = 10_000
 
 /**
- * How long a balanced block waits for the server to hand out its cards
- * before the tablet draws the least-used ones itself from the last counts
- * it saw. An interview must never be stuck behind a weak signal.
+ * How long a balanced or planned block waits for the server to hand out its
+ * cards before the tablet picks for itself from the last counts it saw. An
+ * interview must never be stuck behind a weak signal.
  */
 const DRAW_TIMEOUT_MS = 6_000
 
@@ -51,12 +53,13 @@ export function FillPage({ surveyId, steps }: { surveyId: string; steps?: boolea
     useQuery(api.questionnaires.get, ready ? { id: surveyId } : 'skip'),
   )
   const serial = useQuery(api.responses.nextSerial, ready ? { questionnaireId: surveyId } : 'skip')
-  const exposureRows = useQuery(
+  const exposure = useQuery(
     api.responses.cardExposure,
     ready ? { questionnaireId: surveyId } : 'skip',
   )
   const submit = useMutation(api.responses.submit)
   const drawCards = useMutation(api.responses.drawCards)
+  const abandonDraw = useMutation(api.responses.abandonDraw)
   const { viewer, isSurveyor, canBuild } = useViewer()
   const [enumerator, setEnumerator] = useState('')
   // The id the interview on screen is saved under. Known from the start, not
@@ -69,28 +72,48 @@ export function FillPage({ surveyId, steps }: { surveyId: string; steps?: boolea
   // Responses kept on this device that the server has not confirmed yet.
   const [waiting, setWaiting] = useState(0)
   const inFlight = useRef(new Set<string>())
+  // Interviews that reached Submit. Their cards are accounted for by the
+  // response (or by the outbox copy waiting to be sent), so they are never
+  // handed back.
+  const submitted = useRef(new Set<string>())
 
   useEffect(() => {
     setEnumerator(getDeviceEnumerator())
   }, [])
 
-  const balanced =
+  /**
+   * Hands back the cards of an interview nobody submitted, so the next
+   * tablet sees them as free. Left alone, they stayed reserved for two hours
+   * and every reload made other tablets skip cards that were never shown.
+   */
+  const abandon = useCallback(
+    (id: string) => {
+      if (submitted.current.has(id)) return
+      abandonDraw({ responseId: id }).catch(() => undefined)
+    },
+    [abandonDraw],
+  )
+
+  // Blocks the server decides for: the balanced ones, and the ones that follow
+  // the creator's scenario plan.
+  const serverDraws =
     questionnaire?.questions.some(
       (question) =>
         question.type === 'choice_experiment' &&
-        question.drawMode === 'balanced' &&
-        question.cards.length > 0,
+        question.cards.length > 0 &&
+        (question.drawMode === 'balanced' || followsPlan(question)),
     ) ?? false
 
   /**
-   * Balanced blocks get their cards from the server, which counts what every
+   * These blocks get their cards from the server, which counts what every
    * tablet has shown and is showing, so no two interviews starting together
-   * are given the same "least-used" cards. Asking twice for one interview
-   * returns the same cards. With no answer in time the blocks draw for
-   * themselves; a late answer then changes nothing already on screen.
+   * are given the same "least-used" cards or the same plan row. Asking twice
+   * for one interview returns the same cards. With no answer in time the
+   * blocks pick for themselves; a late answer then changes nothing already on
+   * screen.
    */
   useEffect(() => {
-    if (!ready || !balanced) return
+    if (!ready || !serverDraws) return
     let cancelled = false
     const offline = typeof navigator !== 'undefined' && navigator.onLine === false
     const giveUp = setTimeout(
@@ -108,7 +131,9 @@ export function FillPage({ surveyId, steps }: { surveyId: string; steps?: boolea
         clearTimeout(giveUp)
         setDrawn({
           id: interviewId,
-          sets: Object.fromEntries(rows.map((row) => [row.questionId, row.sets])),
+          sets: Object.fromEntries(
+            rows.map((row) => [row.questionId, { sets: row.sets, planRow: row.planRow }]),
+          ),
         })
       })
       .catch(() => {
@@ -122,7 +147,7 @@ export function FillPage({ surveyId, steps }: { surveyId: string; steps?: boolea
       cancelled = true
       clearTimeout(giveUp)
     }
-  }, [ready, balanced, surveyId, interviewId, drawCards])
+  }, [ready, serverDraws, surveyId, interviewId, drawCards])
 
   /**
    * Sends one queued response and takes it out of the outbox once the server
@@ -140,6 +165,7 @@ export function FillPage({ surveyId, steps }: { surveyId: string; steps?: boolea
           questionnaireId: pending.questionnaireId,
           enumerator: pending.enumerator,
           language: pending.language,
+          ...(pending.respondent ? { respondent: pending.respondent } : {}),
           answers: encodeAnswers(pending.answers),
         })
         removeFromOutbox(pending.id)
@@ -159,6 +185,17 @@ export function FillPage({ surveyId, steps }: { surveyId: string; steps?: boolea
     for (const response of pending) send(response).catch(() => undefined)
   }, [send])
 
+  // Closing the tab or walking away from the page gives the cards back.
+  useEffect(() => {
+    if (!ready || !serverDraws) return
+    const release = () => abandon(interviewId)
+    window.addEventListener('pagehide', release)
+    return () => {
+      window.removeEventListener('pagehide', release)
+      release()
+    }
+  }, [ready, serverDraws, interviewId, abandon])
+
   useEffect(() => {
     if (!ready) return
     flushOutbox()
@@ -173,11 +210,13 @@ export function FillPage({ surveyId, steps }: { surveyId: string; steps?: boolea
    * and can carry on; a refusal is thrown so the form says so.
    */
   async function handleSubmit(response: SurveyResponse): Promise<SubmitOutcome> {
+    submitted.current.add(response.id)
     const pending: PendingResponse = {
       id: response.id,
       questionnaireId: response.questionnaireId,
       enumerator: response.enumerator,
       language: response.language,
+      ...(response.respondent ? { respondent: response.respondent } : {}),
       answers: response.answers,
       queuedAt: Date.now(),
     }
@@ -226,17 +265,26 @@ export function FillPage({ surveyId, steps }: { surveyId: string; steps?: boolea
 
   const nextSerial = serial ?? 1
 
-  // Balanced blocks wait for the server's cards. The counts are only what a
+  // These blocks wait for the server's answer. The counts are only what a
   // block falls back on once the server has answered without cards for it or
-  // has not answered in time; cards other tablets hold right now count too.
+  // has not answered in time; cards and plan rows other tablets hold right now
+  // count too.
   const assigned = drawn?.id === interviewId ? drawn : null
   let cardExposure: QuestionnaireCardExposure | undefined
-  if (!balanced || assigned) {
+  let planExposure: QuestionnairePlanExposure | undefined
+  if (!serverDraws || assigned) {
     cardExposure = {}
-    for (const { questionId, set, count, reserved } of exposureRows ?? []) {
+    for (const { questionId, set, count, reserved } of exposure?.cards ?? []) {
       cardExposure[questionId] = {
         ...(cardExposure[questionId] ?? {}),
         [set]: count + reserved,
+      }
+    }
+    planExposure = {}
+    for (const { questionId, row, count, reserved } of exposure?.planRows ?? []) {
+      planExposure[questionId] = {
+        ...(planExposure[questionId] ?? {}),
+        [row]: count + reserved,
       }
     }
   }
@@ -272,9 +320,13 @@ export function FillPage({ surveyId, steps }: { surveyId: string; steps?: boolea
               }
         }
         cardExposure={cardExposure}
+        planExposure={planExposure}
         cardDraws={assigned?.sets ?? undefined}
         responseId={interviewId}
-        onRestart={() => setInterviewId(uid())}
+        onRestart={() => {
+          abandon(interviewId)
+          setInterviewId(uid())
+        }}
         onSubmit={handleSubmit}
         mode={stepped ? 'steps' : 'page'}
       />

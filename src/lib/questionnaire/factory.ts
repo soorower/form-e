@@ -1,3 +1,4 @@
+import { createRespondentInfo } from './respondent'
 import type {
   ChoiceExperimentQuestion,
   ChoiceLayout,
@@ -96,7 +97,8 @@ export const QUESTION_TYPES: QuestionTypeMeta[] = [
   {
     type: 'choice_experiment',
     label: 'Choice experiment',
-    description: 'Scenario tables built from your design cards; each respondent gets a random draw.',
+    description:
+      'Scenario tables built from your design cards, drawn for each respondent or handed out by your own scenario plan.',
   },
 ]
 
@@ -173,6 +175,7 @@ export function createQuestion(type: QuestionType): Question {
         // New blocks share their cards out evenly; older ones keep what they had.
         drawMode: 'balanced',
         cards: [],
+        scenarioPlan: [],
         levelLabels: {},
         scenariosPerRespondent: 3,
         prompts: [defaultPrompt('alternatives')],
@@ -240,6 +243,7 @@ export function createQuestionnaire(): Questionnaire {
     responseTarget: 0,
     surveyCodePrefix: '',
     enumerators: [],
+    respondent: createRespondentInfo(),
     createdAt: now,
     updatedAt: now,
   }

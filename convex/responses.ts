@@ -4,6 +4,7 @@ import {
   CARD_RESERVATION_MS,
   pickLeastUsed,
   tallyAnswers,
+  tallyPlanRow,
   tallySets,
   type CardCounts,
 } from './cardBalance'
@@ -17,7 +18,7 @@ import {
   viewerAccess,
   visibleQuestionnaires,
 } from './access'
-import { lang } from './validators'
+import { lang, respondentDetails } from './validators'
 
 // Reading answers needs builder access to their survey. `progress` gives the
 // team (surveyors included) who collected what, without the answers.
@@ -48,15 +49,20 @@ async function highestSerial(
  * Counted from the responses themselves each time rather than kept in a
  * tally, so deleting or importing responses can never leave it out of step.
  * `expired` are reservations nobody submitted in time; a mutation clears them.
+ *
+ * `planShown` / `planReserved` count the same two things for the rows of a
+ * block's scenario plan, so a planned block hands out its least-used row.
  */
 async function cardUsage(ctx: QueryCtx | MutationCtx, questionnaireId: string, now: number) {
   const shown = new Map<string, CardCounts>()
   const reserved = new Map<string, CardCounts>()
+  const planShown = new Map<string, CardCounts>()
+  const planReserved = new Map<string, CardCounts>()
   const responses = await ctx.db
     .query('responses')
     .withIndex('by_questionnaire', (q) => q.eq('questionnaireId', questionnaireId))
     .collect()
-  for (const response of responses) tallyAnswers(response.answers, shown)
+  for (const response of responses) tallyAnswers(response.answers, shown, planShown)
   const submitted = new Set(responses.map((response) => response.id))
 
   const draws = await ctx.db
@@ -69,12 +75,26 @@ async function cardUsage(ctx: QueryCtx | MutationCtx, questionnaireId: string, n
       expired.push(draw)
     } else {
       tallySets(draw.questionId, draw.sets, reserved)
+      if (draw.planRow !== undefined) tallyPlanRow(draw.questionId, draw.planRow, planReserved)
     }
   }
-  return { shown, reserved, expired }
+  return { shown, reserved, planShown, planReserved, expired }
 }
 
-async function releaseCards(ctx: MutationCtx, responseId: string) {
+/** The two usage tallies for one block added together. */
+function combined(
+  questionId: string,
+  shown: Map<string, CardCounts>,
+  reserved: Map<string, CardCounts>,
+): CardCounts {
+  const usage: CardCounts = new Map(shown.get(questionId))
+  for (const [key, count] of reserved.get(questionId) ?? []) {
+    usage.set(key, (usage.get(key) ?? 0) + count)
+  }
+  return usage
+}
+
+async function deleteDrawsFor(ctx: MutationCtx, responseId: string) {
   const draws = await ctx.db
     .query('cardDraws')
     .withIndex('by_response', (q) => q.eq('responseId', responseId))
@@ -164,6 +184,7 @@ export const submit = mutation({
     questionnaireId: v.string(),
     enumerator: v.string(),
     language: lang,
+    respondent: v.optional(respondentDetails),
     answers: v.any(),
   },
   handler: async (ctx, args) => {
@@ -172,7 +193,7 @@ export const submit = mutation({
       .withIndex('by_app_id', (q) => q.eq('id', args.id))
       .unique()
     // The cards this interview reserved now count through the response itself.
-    await releaseCards(ctx, args.id)
+    await deleteDrawsFor(ctx, args.id)
     if (duplicate) return { serial: duplicate.serial, surveyNumber: duplicate.surveyNumber }
 
     const questionnaire = await ctx.db
@@ -218,6 +239,7 @@ export const importMany = mutation({
         surveyNumber: v.string(),
         enumerator: v.string(),
         language: lang,
+        respondent: v.optional(respondentDetails),
         answers: v.any(),
         submittedAt: v.number(),
       }),
@@ -261,43 +283,83 @@ export const drawCards = mutation({
       .query('cardDraws')
       .withIndex('by_response', (q) => q.eq('responseId', responseId))
       .collect()
-    if (held.length > 0) return held.map(({ questionId, sets }) => ({ questionId, sets }))
+    if (held.length > 0) {
+      return held.map(({ questionId, sets, planRow }) => ({ questionId, sets, planRow }))
+    }
 
     const questionnaire = await questionnaireByAppId(ctx, questionnaireId)
-    const blocks = (questionnaire?.questions ?? []).flatMap((question) =>
-      question.type === 'choice_experiment' &&
-      question.drawMode === 'balanced' &&
-      question.cards.length > 0
-        ? [question]
-        : [],
-    )
+    const blocks = (questionnaire?.questions ?? []).flatMap((question) => {
+      if (question.type !== 'choice_experiment' || question.cards.length === 0) return []
+      const planned = question.drawMode === 'plan' && (question.scenarioPlan?.length ?? 0) > 0
+      return planned || question.drawMode === 'balanced' ? [question] : []
+    })
     if (blocks.length === 0) return []
 
     const now = Date.now()
-    const { shown, reserved, expired } = await cardUsage(ctx, questionnaireId, now)
+    const { shown, reserved, planShown, planReserved, expired } = await cardUsage(
+      ctx,
+      questionnaireId,
+      now,
+    )
     for (const draw of expired) await ctx.db.delete(draw._id)
 
     const drawn = []
     for (const block of blocks) {
-      const usage: CardCounts = new Map(shown.get(block.id))
-      for (const [set, count] of reserved.get(block.id) ?? []) {
-        usage.set(set, (usage.get(set) ?? 0) + count)
+      const plan = block.drawMode === 'plan' ? (block.scenarioPlan ?? []) : []
+      let sets: number[]
+      let planRow: number | undefined
+      if (plan.length > 0) {
+        // A planned block draws nothing: it hands out the plan row used least
+        // so far, and that row's cards exactly as the creator wrote them —
+        // repeats and order included.
+        const [row] = pickLeastUsed(
+          plan.map((entry) => entry.row),
+          1,
+          combined(block.id, planShown, planReserved),
+        )
+        planRow = row
+        const known = new Set(block.cards.map((card) => card.set))
+        sets = (plan.find((entry) => entry.row === row)?.sets ?? []).filter((set) => known.has(set))
+      } else {
+        sets = pickLeastUsed(
+          block.cards.map((card) => card.set),
+          block.scenariosPerRespondent,
+          combined(block.id, shown, reserved),
+        )
       }
-      const sets = pickLeastUsed(
-        block.cards.map((card) => card.set),
-        block.scenariosPerRespondent,
-        usage,
-      )
       await ctx.db.insert('cardDraws', {
         questionnaireId,
         responseId,
         questionId: block.id,
         sets,
+        ...(planRow === undefined ? {} : { planRow }),
         drawnAt: now,
       })
-      drawn.push({ questionId: block.id, sets })
+      drawn.push({ questionId: block.id, sets, planRow })
     }
     return drawn
+  },
+})
+
+/**
+ * Gives back the cards an interview was holding when it is abandoned: the
+ * enumerator started a new response, or left the page without submitting.
+ * Without this the cards stayed reserved for CARD_RESERVATION_MS, so every
+ * reload made other tablets skip cards that were never actually shown.
+ * Public, like the rest of the tablet's functions; it only ever deletes
+ * reservations, and `submit` ignores an id it has already recorded.
+ */
+export const abandonDraw = mutation({
+  args: { responseId: v.string() },
+  handler: async (ctx, { responseId }) => {
+    const submitted = await ctx.db
+      .query('responses')
+      .withIndex('by_app_id', (q) => q.eq('id', responseId))
+      .unique()
+    // A recorded response counts through its own answers, so its rows are
+    // gone already; this guard only stops a stray call from mattering.
+    if (submitted) return
+    await deleteDrawsFor(ctx, responseId)
   },
 })
 
@@ -310,20 +372,37 @@ export const drawCards = mutation({
 export const cardExposure = query({
   args: { questionnaireId: v.string() },
   handler: async (ctx, { questionnaireId }) => {
-    const { shown, reserved } = await cardUsage(ctx, questionnaireId, Date.now())
-    const rows = []
-    for (const questionId of new Set([...shown.keys(), ...reserved.keys()])) {
-      const counts = shown.get(questionId)
-      const held = reserved.get(questionId)
-      for (const set of new Set([...(counts?.keys() ?? []), ...(held?.keys() ?? [])])) {
-        rows.push({
-          questionId,
-          set,
-          count: counts?.get(set) ?? 0,
-          reserved: held?.get(set) ?? 0,
-        })
-      }
+    const { shown, reserved, planShown, planReserved } = await cardUsage(
+      ctx,
+      questionnaireId,
+      Date.now(),
+    )
+    const cards = []
+    for (const { questionId, value, count, reserved: held } of flatten(shown, reserved)) {
+      cards.push({ questionId, set: value, count, reserved: held })
     }
-    return rows
+    const planRows = []
+    for (const { questionId, value, count, reserved: held } of flatten(planShown, planReserved)) {
+      planRows.push({ questionId, row: value, count, reserved: held })
+    }
+    return { cards, planRows }
   },
 })
+
+/** Both tallies of one kind as flat rows: one per question id × key. */
+function flatten(counted: Map<string, CardCounts>, held: Map<string, CardCounts>) {
+  const rows: { questionId: string; value: number; count: number; reserved: number }[] = []
+  for (const questionId of new Set([...counted.keys(), ...held.keys()])) {
+    const counts = counted.get(questionId)
+    const reservations = held.get(questionId)
+    for (const value of new Set([...(counts?.keys() ?? []), ...(reservations?.keys() ?? [])])) {
+      rows.push({
+        questionId,
+        value,
+        count: counts?.get(value) ?? 0,
+        reserved: reservations?.get(value) ?? 0,
+      })
+    }
+  }
+  return rows
+}
