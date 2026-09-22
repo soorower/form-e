@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Form-E">
+  <title>Form-E</title>
+  <!-- A spine and three bars: an E, and a form, in one mark. The middle bar is
+       short the way an E's is; the two lighter bars keep the top one reading
+       as the answer that was chosen. -->
+  <rect x="2" y="2" width="60" height="60" rx="15" fill="#4F46E5"/>
+  <rect x="17" y="16" width="7" height="32" rx="3.5" fill="#fff"/>
+  <rect x="26" y="16" width="22" height="7" rx="3.5" fill="#fff"/>
+  <rect x="26" y="28.5" width="16" height="7" rx="3.5" fill="#fff" fill-opacity=".55"/>
+  <rect x="26" y="41" width="22" height="7" rx="3.5" fill="#fff" fill-opacity=".55"/>
+</svg>

@@ -165,7 +165,7 @@ function HomePage() {
           <div className="absolute -inset-12 animate-pulse rounded-full bg-gradient-to-tr from-indigo-500/20 via-violet-500/20 to-blue-500/20 blur-3xl" />
           <BrandMark
             size={96}
-            className="relative rounded-3xl shadow-2xl transition-all duration-500 group-hover:scale-110 group-hover:rotate-3"
+            className="relative shadow-2xl transition-all duration-500 group-hover:scale-110 group-hover:rotate-3"
           />
         </div>
 
