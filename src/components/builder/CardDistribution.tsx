@@ -15,8 +15,14 @@ import {
   EXAMPLE_SCENARIO_PLAN,
   checkScenarioPlan,
   parseScenarioPlan,
+  splitScenarioPlan,
+  type PlanTarget,
 } from '#/lib/questionnaire/scenario-plan'
-import type { CardDrawMode, ChoiceExperimentQuestion } from '#/lib/questionnaire/types'
+import type {
+  CardDrawMode,
+  ChoiceExperimentQuestion,
+  ScenarioPlanRow,
+} from '#/lib/questionnaire/types'
 import { cn } from '#/lib/utils'
 
 /** The survey a block belongs to: its fixed target and how to change it. */
@@ -24,6 +30,14 @@ export interface SurveyTarget {
   id: string
   responseTarget: number
   onResponseTargetChange: (responseTarget: number) => void
+  /**
+   * Every choice block in the survey, in order, so one pasted sheet can be
+   * split across them all. Absent when the block is edited on its own, and
+   * the sheet then applies to this block alone.
+   */
+  choiceBlocks?: PlanTarget[]
+  /** Writes each block's slice of a split plan back to the survey. */
+  onPlanSplit?: (byBlock: Map<string, ScenarioPlanRow[]>) => void
 }
 
 interface CardDistributionProps {
@@ -149,7 +163,7 @@ export function CardDistribution({ question, survey, onChange }: CardDistributio
         </p>
       </div>
 
-      {usesPlan && <ScenarioPlanPanel question={question} onChange={onChange} />}
+      {usesPlan && <ScenarioPlanPanel question={question} survey={survey} onChange={onChange} />}
       {balanced && <PlanSummary plan={plan} question={question} hasSurvey={!!survey} />}
       {survey && (
         <CardUsage
@@ -171,9 +185,11 @@ export function CardDistribution({ question, survey, onChange }: CardDistributio
  */
 function ScenarioPlanPanel({
   question,
+  survey,
   onChange,
 }: {
   question: ChoiceExperimentQuestion
+  survey?: SurveyTarget
   onChange: (patch: Partial<ChoiceExperimentQuestion>) => void
 }) {
   const rows = question.scenarioPlan ?? []
@@ -184,18 +200,46 @@ function ScenarioPlanPanel({
   const [showRows, setShowRows] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
 
+  // More than one choice block, and a sheet wider than this block asks for:
+  // the paste covers the whole interview and is split across the blocks.
+  const siblings = survey?.choiceBlocks ?? []
+  const splitsAcrossBlocks = siblings.length > 1 && !!survey?.onPlanSplit
+
   function importPlan(source: string) {
     try {
       const parsed = parseScenarioPlan(source)
-      onChange({
-        scenarioPlan: parsed.rows,
-        // The plan decides how many scenarios an interview holds, and question
-        // numbering counts from it, so the two are set together.
-        scenariosPerRespondent: Math.max(1, parsed.scenariosPerRow),
-      })
       const messages = [
         `Read ${count(parsed.rows.length, 'row', 'rows')} of up to ${count(parsed.scenariosPerRow, 'card', 'cards')} each.`,
       ]
+
+      if (splitsAcrossBlocks && parsed.scenariosPerRow > question.scenariosPerRespondent) {
+        // One sheet for the whole interview: columns go to the blocks in
+        // order, each taking as many as it asks scenarios.
+        const split = splitScenarioPlan(parsed.rows, siblings)
+        survey!.onPlanSplit!(split.byBlock)
+        const where = split.spans
+          .map((span, index) => `block ${index + 1} takes ${span.from === span.to ? `scenario ${span.from}` : `scenarios ${span.from}–${span.to}`}`)
+          .join(', ')
+        messages.push(`Split across ${count(siblings.length, 'block', 'blocks')}: ${where}.`)
+        if (split.missing > 0) {
+          messages.push(
+            `The blocks ask for ${split.missing} more ${split.missing === 1 ? 'scenario' : 'scenarios'} than the sheet has, so the last of them get none.`,
+          )
+        }
+        if (split.leftover > 0) {
+          messages.push(
+            `${split.leftover} ${split.leftover === 1 ? 'column is' : 'columns are'} left over; add a block or raise a block's scenario count to use them.`,
+          )
+        }
+      } else {
+        onChange({
+          scenarioPlan: parsed.rows,
+          // The plan decides how many scenarios an interview holds, and
+          // question numbering counts from it, so the two are set together.
+          scenariosPerRespondent: Math.max(1, parsed.scenariosPerRow),
+        })
+      }
+
       if (!parsed.hadRowColumn) {
         messages.push('No row-number column was found, so the rows are numbered in the order pasted.')
       }
@@ -284,14 +328,27 @@ function ScenarioPlanPanel({
             onChange={handleFile}
           />
           <p className="text-xs text-muted-foreground">
-            One row per respondent group. The first column is that row&apos;s number (headed{' '}
+            One row per respondent. The first column is that row&apos;s number (headed{' '}
             <span className="font-mono">Set</span>, <span className="font-mono">Respondent</span>,{' '}
             <span className="font-mono">Row</span>, …); every other cell is a card{' '}
-            <span className="font-mono">Set</span> number from the design cards above.{' '}
-            <strong>However many scenario columns the sheet has is how many scenarios each
-            respondent answers</strong> — a nine-column sheet gives one block of nine, not three
-            blocks of three. A row may name the same card twice. Tab- or comma-separated, so a
-            paste from Excel and a saved CSV both work.
+            <span className="font-mono">Set</span> number.{' '}
+            {splitsAcrossBlocks ? (
+              <>
+                <strong>
+                  Paste the sheet for the whole interview once, here — its columns are shared out
+                  over this survey&apos;s {siblings.length} choice blocks in order
+                </strong>
+                , each taking as many columns as it asks scenarios (3 + 3 + 3 reads a nine-column
+                sheet). Every block gets the same row numbers, so one respondent answers row 7
+                throughout.
+              </>
+            ) : (
+              <>
+                However many scenario columns the sheet has is how many scenarios this block asks.
+              </>
+            )}{' '}
+            A row may name the same card twice. Tab- or comma-separated, so a paste from Excel and
+            a saved CSV both work.
           </p>
         </div>
       ) : (

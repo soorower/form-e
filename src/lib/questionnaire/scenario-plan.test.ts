@@ -7,6 +7,7 @@ import {
   leastUsedPlanRow,
   parseScenarioPlan,
   scenariosFromPlanRow,
+  splitScenarioPlan,
 } from './scenario-plan'
 import type { ChoiceExperimentQuestion } from './types'
 
@@ -154,16 +155,87 @@ describe('following a plan', () => {
     expect(scenariosFromPlanRow(block({ scenarioPlan: [] }), 1)).toEqual([])
   })
 
-  it('takes the least-used row, which is how the rows even out', () => {
+  it('takes the least-used row, the lowest-numbered of equals', () => {
     const question = block({
       drawMode: 'plan',
       scenarioPlan: [1, 2, 3].map((row) => ({ row, sets: [row] })),
     })
     expect(leastUsedPlanRow(question, { 1: 4, 2: 4, 3: 1 })).toBe(3)
-    // Every row equally used: any of them, picked at random.
-    expect([1, 2, 3]).toContain(leastUsedPlanRow(question, { 1: 2, 2: 2, 3: 2 }))
     // A row never used counts as zero rather than being skipped.
     expect(leastUsedPlanRow(question, { 1: 1, 2: 1 })).toBe(3)
+  })
+
+  it('walks the rows in order, so the plan row matches the survey number', () => {
+    // The whole point of the lowest-numbered tie-break: response 1 gets row 1,
+    // response 2 row 2, … and after the last row it begins again at row 1.
+    // Ties broken at random gave the first interview row 41.
+    const question = block({
+      drawMode: 'plan',
+      scenarioPlan: [1, 2, 3, 4].map((row) => ({ row, sets: [row] })),
+    })
+    const usage: Record<number, number> = {}
+    const handedOut = []
+    for (let response = 1; response <= 6; response += 1) {
+      const row = leastUsedPlanRow(question, usage)
+      usage[row] = (usage[row] ?? 0) + 1
+      handedOut.push(row)
+    }
+    expect(handedOut).toEqual([1, 2, 3, 4, 1, 2])
+  })
+})
+
+describe('splitScenarioPlan', () => {
+  const blocks = [
+    { id: 'a', scenariosPerRespondent: 3 },
+    { id: 'b', scenariosPerRespondent: 3 },
+    { id: 'c', scenariosPerRespondent: 3 },
+  ]
+
+  it('shares one nine-column sheet over three blocks of three', () => {
+    // The AC Bus layout: one row per respondent covering the whole interview.
+    const { rows } = parseScenarioPlan(EXAMPLE_SCENARIO_PLAN)
+    const split = splitScenarioPlan(rows, blocks)
+
+    expect(split.spans).toEqual([
+      { id: 'a', from: 1, to: 3 },
+      { id: 'b', from: 4, to: 6 },
+      { id: 'c', from: 7, to: 9 },
+    ])
+    // Sheet row 1 is 14 21 25 | 2 7 23 | 35 34 9.
+    expect(split.byBlock.get('a')![0]).toEqual({ row: 1, sets: [14, 21, 25] })
+    expect(split.byBlock.get('b')![0]).toEqual({ row: 1, sets: [2, 7, 23] })
+    expect(split.byBlock.get('c')![0]).toEqual({ row: 1, sets: [35, 34, 9] })
+    expect(split.leftover).toBe(0)
+    expect(split.missing).toBe(0)
+  })
+
+  it('gives every block the same row numbers, so one interview answers one row', () => {
+    const { rows } = parseScenarioPlan(EXAMPLE_SCENARIO_PLAN)
+    const split = splitScenarioPlan(rows, blocks)
+    const numbers = [...split.byBlock.values()].map((block) => block.map((row) => row.row))
+    expect(numbers[0]).toEqual([1, 2, 3, 4, 5])
+    expect(numbers[1]).toEqual(numbers[0])
+    expect(numbers[2]).toEqual(numbers[0])
+  })
+
+  it('reports columns left over and columns the sheet does not have', () => {
+    const rows = [{ row: 1, sets: [1, 2, 3, 4, 5, 6, 7, 8, 9] }]
+    expect(splitScenarioPlan(rows, blocks.slice(0, 2)).leftover).toBe(3)
+    expect(splitScenarioPlan(rows, [...blocks, { id: 'd', scenariosPerRespondent: 2 }]).missing).toBe(2)
+    // Blocks beyond the sheet simply get nothing rather than breaking.
+    const short = splitScenarioPlan([{ row: 1, sets: [1, 2, 3] }], blocks)
+    expect(short.byBlock.get('a')![0].sets).toEqual([1, 2, 3])
+    expect(short.byBlock.get('c')![0].sets).toEqual([])
+  })
+
+  it('handles blocks of different sizes, taking each in turn', () => {
+    const rows = [{ row: 4, sets: [11, 12, 13, 14, 15, 16] }]
+    const split = splitScenarioPlan(rows, [
+      { id: 'a', scenariosPerRespondent: 2 },
+      { id: 'b', scenariosPerRespondent: 4 },
+    ])
+    expect(split.byBlock.get('a')![0]).toEqual({ row: 4, sets: [11, 12] })
+    expect(split.byBlock.get('b')![0]).toEqual({ row: 4, sets: [13, 14, 15, 16] })
   })
 })
 

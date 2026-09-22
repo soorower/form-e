@@ -46,6 +46,25 @@ export function tallySets(questionId: string, sets: number[], into: Map<string, 
   for (const set of sets) bump(into, questionId, set)
 }
 
+/**
+ * The plan row to hand out next: the least-used, and among equals the
+ * lowest-numbered. The lowest-numbered tie-break is what keeps the plan in
+ * step with the survey numbering — response 1 takes row 1, response 2 row 2 —
+ * and once every row has gone out once it begins again at row 1. Mirrors
+ * `leastUsedPlanRow` in src/lib/questionnaire/scenario-plan.ts, which the
+ * tablet falls back on when it cannot reach the server.
+ */
+export function nextPlanRow(rows: number[], usage: CardCounts): number | undefined {
+  let best: { row: number; used: number } | undefined
+  for (const row of rows) {
+    const used = usage.get(row) ?? 0
+    if (!best || used < best.used || (used === best.used && row < best.row)) {
+      best = { row, used }
+    }
+  }
+  return best?.row
+}
+
 /** Adds one plan row held by an interview that has not been submitted yet. */
 export function tallyPlanRow(
   questionId: string,

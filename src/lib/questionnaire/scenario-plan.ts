@@ -1,4 +1,4 @@
-import { fromBanglaDigits, parseDelimited, randomIndex, type CardExposure } from './cards'
+import { fromBanglaDigits, parseDelimited, type CardExposure } from './cards'
 import type { ChoiceCard, ChoiceExperimentQuestion, ChoiceScenarioAnswer, ScenarioPlanRow } from './types'
 
 /**
@@ -106,6 +106,64 @@ export function parseScenarioPlan(input: string): ParsedScenarioPlan {
   }
 }
 
+/** A choice block as the splitter sees it: its id and how many scenarios it asks. */
+export interface PlanTarget {
+  id: string
+  scenariosPerRespondent: number
+}
+
+export interface SplitScenarioPlan {
+  /** The rows each block gets, by block id. Row numbers are the same in every block. */
+  byBlock: Map<string, ScenarioPlanRow[]>
+  /** Which sheet columns went to which block, 1-based and inclusive, in block order. */
+  spans: { id: string; from: number; to: number }[]
+  /** Scenario columns the blocks did not between them account for. */
+  leftover: number
+  /** Columns the last blocks wanted but the sheet did not have. */
+  missing: number
+}
+
+/**
+ * Splits ONE sheet across the survey's choice blocks, in block order: with
+ * blocks of 3, 3 and 3, columns 1-3 go to the first block, 4-6 to the second
+ * and 7-9 to the third. This is how the AC Bus workbook is laid out — its
+ * `Scenario` sheet is nine columns covering three blocks of three, one row per
+ * respondent — so the whole interview is pasted once instead of block by block.
+ *
+ * **Every block keeps the same row numbers**, which is what lets one interview
+ * take row 7 of the sheet and have all three blocks show row 7's cards.
+ *
+ * Each block takes as many columns as it asks scenarios. A sheet with columns
+ * to spare, or too few to go round, still splits as far as it goes and says so
+ * in `leftover` / `missing`, since only the creator can say which is right.
+ */
+export function splitScenarioPlan(
+  rows: ScenarioPlanRow[],
+  blocks: PlanTarget[],
+): SplitScenarioPlan {
+  const width = rows.length > 0 ? Math.max(...rows.map((row) => row.sets.length)) : 0
+  const byBlock = new Map<string, ScenarioPlanRow[]>()
+  const spans: { id: string; from: number; to: number }[] = []
+  let offset = 0
+
+  for (const block of blocks) {
+    const take = Math.max(1, block.scenariosPerRespondent)
+    byBlock.set(
+      block.id,
+      rows.map((row) => ({ row: row.row, sets: row.sets.slice(offset, offset + take) })),
+    )
+    spans.push({ id: block.id, from: offset + 1, to: offset + take })
+    offset += take
+  }
+
+  return {
+    byBlock,
+    spans,
+    leftover: Math.max(0, width - offset),
+    missing: Math.max(0, offset - width),
+  }
+}
+
 /** The plan rows of a block, empty unless it follows a plan. */
 export function planRows(
   question: Pick<ChoiceExperimentQuestion, 'scenarioPlan'>,
@@ -147,33 +205,30 @@ export function scenariosFromPlanRow(
 }
 
 /**
- * The plan row to hand out next, judged from how often each row has been used
- * so far: the least-used one, ties broken at random. The server decides this
- * for every interview (`responses.drawCards`, which also counts rows held by
- * interviews going on right now); this is what the tablet falls back on when
- * the server cannot be reached, so an interview is never stuck. 0 when the
- * block has no plan.
+ * The plan row to hand out next: the least-used one, and among equals **the
+ * lowest-numbered**. That tie-break is what lines the plan up with the survey
+ * numbering — the first response takes row 1, the second row 2, and so on, the
+ * way the workbook's `Set` column runs — and after every row has been used once
+ * it starts again at row 1. Breaking ties at random instead gave the first
+ * interview row 41.
+ *
+ * The server decides this for every interview (`responses.drawCards`, which
+ * also counts rows held by interviews going on right now, so two tablets
+ * starting together get different rows); this is what the tablet falls back on
+ * when the server cannot be reached. 0 when the block has no plan.
  */
 export function leastUsedPlanRow(
   question: Pick<ChoiceExperimentQuestion, 'scenarioPlan'>,
   usage?: CardExposure,
-  random: (max: number) => number = randomIndex,
 ): number {
-  const rows = planRows(question).map((row) => row.row)
-  if (rows.length === 0) return 0
-  // Pick at random among the joint least-used rows.
-  let best = Infinity
-  let candidates: number[] = []
-  for (const row of rows) {
+  let best: { row: number; used: number } | null = null
+  for (const { row } of planRows(question)) {
     const used = usage?.[row] ?? 0
-    if (used < best) {
-      best = used
-      candidates = [row]
-    } else if (used === best) {
-      candidates.push(row)
+    if (!best || used < best.used || (used === best.used && row < best.row)) {
+      best = { row, used }
     }
   }
-  return candidates[random(candidates.length)]
+  return best?.row ?? 0
 }
 
 export interface PlanCheck {

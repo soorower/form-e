@@ -2,7 +2,12 @@ import { Fragment } from 'react'
 import { ClipboardList } from 'lucide-react'
 import { insertAt, moveItem } from '#/lib/list'
 import { createQuestion, duplicateQuestion } from '#/lib/questionnaire/factory'
-import type { Question, QuestionType, Questionnaire } from '#/lib/questionnaire/types'
+import type {
+  Question,
+  QuestionType,
+  Questionnaire,
+  ScenarioPlanRow,
+} from '#/lib/questionnaire/types'
 import { FormSettings } from './FormSettings'
 import { InsertQuestion } from './InsertQuestion'
 import { QuestionCard } from './QuestionCard'
@@ -49,12 +54,28 @@ export function QuestionnaireBuilder({ questionnaire, onUpdate }: QuestionnaireB
 
   const moveTo = (from: number, to: number) => setQuestions((list) => moveItem(list, from, to))
 
-  // Choice-experiment blocks plan their cards against the survey's target.
+  // Choice-experiment blocks plan their cards against the survey's target, and
+  // one pasted scenario sheet is shared out over all of them in order.
+  const choiceBlocks = questions.flatMap((question) =>
+    question.type === 'choice_experiment'
+      ? [{ id: question.id, scenariosPerRespondent: question.scenariosPerRespondent }]
+      : [],
+  )
   const survey = {
     id: questionnaire.id,
     responseTarget: questionnaire.responseTarget,
     onResponseTargetChange: (responseTarget: number) =>
       onUpdate((current) => ({ ...current, responseTarget })),
+    choiceBlocks,
+    onPlanSplit: (byBlock: Map<string, ScenarioPlanRow[]>) =>
+      setQuestions((list) =>
+        list.map((question) => {
+          const rows = byBlock.get(question.id)
+          if (!rows || question.type !== 'choice_experiment') return question
+          // Every block that takes part follows the plan from now on.
+          return { ...question, drawMode: 'plan' as const, scenarioPlan: rows }
+        }),
+      ),
   }
 
   return (

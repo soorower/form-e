@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  nextPlanRow,
   pickLeastUsed,
   tallyAnswers,
   tallyPlanRow,
@@ -143,6 +144,32 @@ describe('scenario plan rows on the server', () => {
       usage.set(row, (usage.get(row) ?? 0) + count)
     }
     // Row 4 has never gone out, so it is next — not row 3, which is reserved.
-    expect(pickLeastUsed([1, 2, 3, 4], 1, usage)).toEqual([4])
+    expect(nextPlanRow([1, 2, 3, 4], usage)).toBe(4)
+  })
+
+  it('walks the rows in order, so the plan row matches the survey number', () => {
+    const rows = [1, 2, 3, 4]
+    const usage: CardCounts = new Map()
+    const handedOut = []
+    for (let response = 1; response <= 6; response += 1) {
+      const row = nextPlanRow(rows, usage)!
+      usage.set(row, (usage.get(row) ?? 0) + 1)
+      handedOut.push(row)
+    }
+    // ACBUS-001 -> row 1, ACBUS-002 -> row 2, …, then round again.
+    expect(handedOut).toEqual([1, 2, 3, 4, 1, 2])
+  })
+
+  it('matches the tablet\'s own fallback, so both pick the same row', () => {
+    // convex/cardBalance.nextPlanRow and scenario-plan.leastUsedPlanRow must
+    // agree, or an offline interview would show a different row to the one
+    // the server reserved.
+    const rows = [3, 1, 2]
+    const usage: CardCounts = new Map([
+      [3, 0],
+      [1, 0],
+      [2, 0],
+    ])
+    expect(nextPlanRow(rows, usage)).toBe(1)
   })
 })

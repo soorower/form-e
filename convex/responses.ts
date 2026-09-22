@@ -2,6 +2,7 @@ import { v } from 'convex/values'
 import { mutation, query, type MutationCtx, type QueryCtx } from './_generated/server'
 import {
   CARD_RESERVATION_MS,
+  nextPlanRow,
   pickLeastUsed,
   tallyAnswers,
   tallyPlanRow,
@@ -303,23 +304,35 @@ export const drawCards = mutation({
     )
     for (const draw of expired) await ctx.db.delete(draw._id)
 
+    // One plan row for the whole interview, so every planned block shows that
+    // same row of the creator's sheet: with three blocks of three, row 7 gives
+    // block 1 its columns 1-3, block 2 its 4-6 and block 3 its 7-9. The rows
+    // are numbered alike in every block, so usage is counted once, off the
+    // first planned block.
+    const planned = blocks.filter(
+      (block) => block.drawMode === 'plan' && (block.scenarioPlan?.length ?? 0) > 0,
+    )
+    const sharedRow =
+      planned.length > 0
+        ? nextPlanRow(
+            planned[0].scenarioPlan!.map((entry) => entry.row),
+            combined(planned[0].id, planShown, planReserved),
+          )
+        : undefined
+
     const drawn = []
     for (const block of blocks) {
       const plan = block.drawMode === 'plan' ? (block.scenarioPlan ?? []) : []
       let sets: number[]
       let planRow: number | undefined
       if (plan.length > 0) {
-        // A planned block draws nothing: it hands out the plan row used least
-        // so far, and that row's cards exactly as the creator wrote them —
-        // repeats and order included.
-        const [row] = pickLeastUsed(
-          plan.map((entry) => entry.row),
-          1,
-          combined(block.id, planShown, planReserved),
-        )
-        planRow = row
+        // A planned block draws nothing: it shows the interview's row exactly
+        // as the creator wrote it — repeats and order included.
+        planRow = sharedRow
         const known = new Set(block.cards.map((card) => card.set))
-        sets = (plan.find((entry) => entry.row === row)?.sets ?? []).filter((set) => known.has(set))
+        sets = (plan.find((entry) => entry.row === planRow)?.sets ?? []).filter((set) =>
+          known.has(set),
+        )
       } else {
         sets = pickLeastUsed(
           block.cards.map((card) => card.set),
