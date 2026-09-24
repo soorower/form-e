@@ -54,18 +54,30 @@ export default function ThemeToggle() {
     }
   }, [mode])
 
+  // One click always flips what is on screen. Cycling auto → light → dark
+  // meant the first click did nothing visible on a light system (auto and
+  // light look the same), so dark mode took two clicks.
+  const [resolved, setResolved] = useState<'light' | 'dark'>('light')
+
+  useEffect(() => {
+    const sync = () =>
+      setResolved(document.documentElement.classList.contains('dark') ? 'dark' : 'light')
+    sync()
+    const observer = new MutationObserver(sync)
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
+    return () => observer.disconnect()
+  }, [])
+
   function toggleMode() {
-    const nextMode: ThemeMode =
-      mode === 'light' ? 'dark' : mode === 'dark' ? 'auto' : 'light'
+    const nextMode: ThemeMode = resolved === 'dark' ? 'light' : 'dark'
     setMode(nextMode)
     applyThemeMode(nextMode)
     window.localStorage.setItem('theme', nextMode)
   }
 
-  const label =
-    mode === 'auto'
-      ? 'Theme mode: auto (system). Click to switch to light mode.'
-      : `Theme mode: ${mode}. Click to switch mode.`
+  const label = `Theme: ${resolved}${mode === 'auto' ? ' (system)' : ''}. Click to switch to ${
+    resolved === 'dark' ? 'light' : 'dark'
+  } mode.`
 
   return (
     <button
@@ -75,18 +87,11 @@ export default function ThemeToggle() {
       title={label}
       className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5 shadow-lg backdrop-blur-md transition-all active:scale-95 hover:bg-white/10 hover:border-white/20"
     >
-      {mode === 'auto' && (
-        <svg className="size-5 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="12" cy="12" r="5" />
-          <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
-        </svg>
-      )}
-      {mode === 'dark' && (
+      {resolved === 'dark' ? (
         <svg className="size-5 text-teal-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
         </svg>
-      )}
-      {mode === 'light' && (
+      ) : (
         <svg className="size-5 text-amber-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="12" cy="12" r="5" />
           <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />

@@ -1,5 +1,6 @@
 import { Link } from '@tanstack/react-router'
 import ThemeToggle from './ThemeToggle'
+import { Wordmark } from './Wordmark'
 import { BrandMark } from './BrandMark'
 import { AuthNav } from './auth/AuthNav'
 import { useViewer } from '#/hooks/useViewer'
@@ -23,9 +24,7 @@ export default function Header() {
             className="group flex items-center gap-3 no-underline transition-transform hover:scale-105"
           >
             <BrandMark size={40} className="shadow-lg shadow-primary/20" />
-            <span className="text-xl font-bold tracking-tight bg-gradient-to-r from-indigo-600 to-violet-600 bg-clip-text text-transparent">
-              Form-E
-            </span>
+            <Wordmark className="text-2xl" />
           </Link>
 
           <div className="hidden md:flex items-center gap-6 text-sm font-semibold">

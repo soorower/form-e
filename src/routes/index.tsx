@@ -1,7 +1,15 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Button } from '#/components/ui/button'
 import { BrandMark } from '#/components/BrandMark'
+import { Wordmark } from '#/components/Wordmark'
+import { FileSpreadsheet, Plane, Ship, TabletSmartphone, TramFront, Workflow } from 'lucide-react'
+import { TransportScene } from '#/components/landing/TransportScene'
+import {
+  AnalyzeIllustration,
+  FieldIllustration,
+  TeamIllustration,
+} from '#/components/landing/Illustrations'
 
 export const Route = createFileRoute('/')({
   head: () => ({ meta: [{ title: 'Form-E · Transportation survey builder' }] }),
@@ -66,27 +74,6 @@ function BikeIcon({ className }: { className?: string }) {
   )
 }
 
-function PlaneIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M32 10L36 28H54L40 38L44 54L32 44L20 54L24 38L10 28H28L32 10Z" fill="currentColor" opacity="0.15" />
-      <path d="M32 10L36 28H54L40 38L44 54L32 44L20 54L24 38L10 28H28L32 10Z" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M32 28V44" stroke="currentColor" strokeWidth="2" strokeLinecap="round" opacity="0.5" />
-    </svg>
-  )
-}
-
-function ScooterIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M20 48H44L48 20H40" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx="20" cy="48" r="4" fill="currentColor" />
-      <circle cx="44" cy="48" r="4" fill="currentColor" />
-      <path d="M48 20L52 16" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
-    </svg>
-  )
-}
-
 function RoadLines() {
   return (
     <div className="pointer-events-none absolute inset-0 overflow-hidden opacity-[0.04]">
@@ -111,11 +98,11 @@ const floatingItems = [
   { Icon: BusIcon, size: 'size-20', top: '15%', right: '8%', delay: '3s', duration: '25s', color: 'text-amber-500' },
   { Icon: TrainIcon, size: 'size-14', top: '60%', left: '8%', delay: '5s', duration: '22s', color: 'text-blue-500' },
   { Icon: BikeIcon, size: 'size-12', top: '70%', right: '12%', delay: '2s', duration: '18s', color: 'text-emerald-500' },
-  { Icon: PlaneIcon, size: 'size-16', top: '25%', left: '80%', delay: '7s', duration: '28s', color: 'text-sky-500' },
-  { Icon: ScooterIcon, size: 'size-10', top: '45%', left: '15%', delay: '4s', duration: '23s', color: 'text-indigo-500' },
+  { Icon: Plane, size: 'size-14', top: '25%', left: '80%', delay: '7s', duration: '28s', color: 'text-sky-500' },
+  { Icon: Ship, size: 'size-12', top: '45%', left: '15%', delay: '4s', duration: '23s', color: 'text-indigo-500' },
   { Icon: BusIcon, size: 'size-12', top: '80%', left: '70%', delay: '6s', duration: '19s', color: 'text-orange-500' },
   { Icon: BikeIcon, size: 'size-14', top: '35%', right: '5%', delay: '1s', duration: '21s', color: 'text-green-500' },
-  { Icon: TrainIcon, size: 'size-10', top: '5%', left: '45%', delay: '8s', duration: '24s', color: 'text-purple-500' },
+  { Icon: TramFront, size: 'size-10', top: '5%', left: '45%', delay: '8s', duration: '24s', color: 'text-purple-500' },
   { Icon: CarIcon, size: 'size-12', top: '85%', left: '35%', delay: '9s', duration: '26s', color: 'text-red-500' },
 ]
 
@@ -124,7 +111,7 @@ function HomePage() {
   const [hovered, setHovered] = useState<string | null>(null)
 
   return (
-    <main className="relative flex min-h-[calc(100vh-8rem)] items-center justify-center overflow-hidden px-4">
+    <main className="relative flex flex-col items-center overflow-hidden px-4">
       {/* Dynamic background background lines */}
       <div className="pointer-events-none absolute inset-0 opacity-10">
         <div className="absolute left-1/4 top-0 h-full w-px bg-gradient-to-b from-transparent via-foreground to-transparent" />
@@ -144,21 +131,23 @@ function HomePage() {
 
       <RoadLines />
 
-      {/* Floating transportation icons */}
-      {floatingItems.map(({ Icon, size, delay, duration, color, ...pos }, i) => (
-        <div
-          key={i}
-          className={`pointer-events-none absolute ${color} opacity-20 dark:opacity-40 transition-opacity duration-1000`}
-          style={{
-            ...pos,
-            animation: `float-${i % 3} ${duration} ${delay} ease-in-out infinite`,
-          }}
-        >
-          <Icon className={size} />
-        </div>
-      ))}
-
       {/* Center content */}
+      <div className="relative flex min-h-[calc(100vh-4rem)] w-full flex-col">
+        {/* Floating (kept to the hero, above the street) transportation icons */}
+        {floatingItems.map(({ Icon, size, delay, duration, color, ...pos }, i) => (
+          <div
+            key={i}
+            className={`pointer-events-none absolute hidden sm:block ${color} opacity-20 dark:opacity-40 transition-opacity duration-1000`}
+            style={{
+              ...pos,
+              animation: `float-${i % 3} ${duration} ${delay} ease-in-out infinite`,
+            }}
+          >
+            <Icon className={size} />
+          </div>
+        ))}
+
+      <div className="flex flex-1 items-center justify-center py-12">
       <div className="rise-in relative z-10 flex flex-col items-center gap-12 text-center max-w-4xl">
         {/* Logo / Brand mark */}
         <div className="group relative">
@@ -170,10 +159,8 @@ function HomePage() {
         </div>
 
         <div className="space-y-6">
-          <h1 className="text-6xl font-extrabold tracking-tight sm:text-8xl lg:text-9xl">
-            <span className="bg-gradient-to-br from-indigo-400 via-violet-500 to-blue-600 bg-clip-text text-transparent drop-shadow-sm">
-              Form-E
-            </span>
+          <h1 className="text-7xl sm:text-8xl lg:text-9xl">
+            <Wordmark feature className="drop-shadow-sm" />
           </h1>
           <p className="mx-auto max-w-2xl text-xl font-medium text-muted-foreground/90 sm:text-2xl leading-relaxed">
             The next generation of <span className="text-foreground">transportation mode choice</span> modelling. 
@@ -184,12 +171,14 @@ function HomePage() {
         {/* Stats / trust signals */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 w-full max-w-2xl">
           {[
-            { label: 'Optimized For', value: 'Tablets & iPads', icon: '📱' },
-            { label: 'Data Ready', value: 'Excel / CSV / JSON', icon: '📊' },
-            { label: 'Survey Flow', value: 'Dynamic & Smart', icon: '⚡' },
-          ].map(({ label, value, icon }) => (
+            { label: 'Optimized For', value: 'Tablets & iPads', Icon: TabletSmartphone, tint: 'bg-indigo-500/10 text-indigo-500' },
+            { label: 'Data Ready', value: 'Excel / CSV / JSON', Icon: FileSpreadsheet, tint: 'bg-emerald-500/10 text-emerald-500' },
+            { label: 'Survey Flow', value: 'Dynamic & Smart', Icon: Workflow, tint: 'bg-amber-500/10 text-amber-500' },
+          ].map(({ label, value, Icon, tint }) => (
             <div key={label} className="flex flex-col items-center gap-2 p-6 rounded-2xl border border-white/10 bg-white/5 backdrop-blur-md shadow-lg transition-transform hover:-translate-y-1">
-              <span className="text-2xl">{icon}</span>
+              <span className={`flex size-10 items-center justify-center rounded-xl ${tint}`}>
+                <Icon className="size-5" />
+              </span>
               <div className="flex flex-col">
                 <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-indigo-500/70">{label}</span>
                 <span className="text-sm font-bold text-foreground/90">{value}</span>
@@ -225,6 +214,7 @@ function HomePage() {
             className="h-16 rounded-2xl px-12 text-lg font-semibold transition-all hover:bg-white/10 hover:backdrop-blur-xl border border-transparent hover:border-white/20"
             onMouseEnter={() => setHovered('learn')}
             onMouseLeave={() => setHovered(null)}
+            onClick={() => document.getElementById('how-it-works')?.scrollIntoView({ behavior: 'smooth' })}
           >
             <span className="flex items-center gap-2">
               Learn More
@@ -238,6 +228,73 @@ function HomePage() {
           </Button>
         </div>
       </div>
+      </div>
+      {/* Full-bleed street along the bottom of the hero. */}
+      <TransportScene className="-mx-4 w-[calc(100%+2rem)]" />
+      </div>
+
+      <IllustrationShowcase />
     </main>
+  )
+}
+
+const showcase = [
+  { Art: TeamIllustration, title: 'Design together', bar: 'bg-blue-600', value: 72 },
+  { Art: FieldIllustration, title: 'Collect in the field', bar: 'bg-rose-500', value: 54 },
+  { Art: AnalyzeIllustration, title: 'Export & analyze', bar: 'bg-violet-500', value: 90 },
+]
+
+/** Animated illustrations below the hero; each card rises in when scrolled to. */
+function IllustrationShowcase() {
+  const ref = useRef<HTMLElement>(null)
+  const [shown, setShown] = useState(false)
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    if (!('IntersectionObserver' in window)) {
+      setShown(true)
+      return
+    }
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setShown(true)
+          observer.disconnect()
+        }
+      },
+      { threshold: 0.15 },
+    )
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+
+  return (
+    <section ref={ref} id="how-it-works" className="relative z-10 w-full max-w-6xl scroll-mt-24 py-20">
+      <div className="mb-10 text-center">
+        <p className="text-xs font-bold uppercase tracking-[0.2em] text-indigo-500">How it works</p>
+        <h2 className="mt-2 text-3xl font-extrabold tracking-tight sm:text-4xl">From questionnaire to dataset</h2>
+      </div>
+      <div className="grid gap-6 md:grid-cols-3">
+        {showcase.map(({ Art, title, bar, value }, i) => (
+          <div
+            key={title}
+            className={`rounded-3xl border bg-card/80 p-6 shadow-xl backdrop-blur-md transition-all duration-700 ease-out hover:-translate-y-1 ${
+              shown ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'
+            }`}
+            style={{ transitionDelay: shown ? `${i * 150}ms` : '0ms' }}
+          >
+            <Art className="aspect-[26/22] w-full" />
+            <h3 className="mt-4 text-center text-lg font-bold">{title}</h3>
+            <div className="mt-4 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+              <div
+                className={`ill-fill h-full rounded-full ${bar}`}
+                style={{ width: `${value}%`, animationDelay: `${i * 0.4}s` }}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
   )
 }

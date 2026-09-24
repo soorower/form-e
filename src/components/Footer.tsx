@@ -1,4 +1,5 @@
 import { BrandMark } from './BrandMark'
+import { Wordmark } from './Wordmark'
 export default function Footer() {
   const year = new Date().getFullYear()
 
@@ -9,7 +10,7 @@ export default function Footer() {
           <div className="col-span-1 md:col-span-2 space-y-6">
             <div className="flex items-center gap-3">
               <BrandMark size={32} />
-              <span className="text-xl font-bold tracking-tight">Form-E</span>
+              <Wordmark className="text-2xl" />
             </div>
             <p className="max-w-xs text-muted-foreground leading-relaxed">
               Empowering transportation researchers with smart, dynamic survey tools. Built for the future of mode choice modelling.
@@ -39,7 +40,16 @@ export default function Footer() {
 
         <div className="pt-8 border-t border-white/5 flex flex-col md:flex-row justify-between items-center gap-6">
           <p className="text-sm text-muted-foreground/60 font-medium">
-            &copy; {year} Form-E. Accelerating transportation research.
+            &copy; {year}{' '}
+            <a
+              href="https://www.linkedin.com/in/mahbuba-ikra-0b6219382/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-muted-foreground underline-offset-4 hover:text-indigo-500 hover:underline transition-colors"
+            >
+              Mahbuba Ikra
+            </a>
+            . All rights reserved.
           </p>
           <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/80">
             <span className="h-2 w-2 rounded-full bg-indigo-500 animate-pulse" />

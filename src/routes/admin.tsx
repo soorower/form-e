@@ -1,4 +1,5 @@
 import { createFileRoute, Link, Outlet } from '@tanstack/react-router'
+import { Wordmark } from '#/components/Wordmark'
 import { ConvexAuthProvider } from '@convex-dev/auth/react'
 import { ShieldCheck } from 'lucide-react'
 import ThemeToggle from '#/components/ThemeToggle'
@@ -52,7 +53,7 @@ function AdminHeader() {
             <ShieldCheck className="size-5" aria-hidden="true" />
           </div>
           <span className="text-lg font-bold tracking-tight">
-            Form-E <span className="font-semibold text-muted-foreground">Admin</span>
+            <Wordmark className="text-xl" /> <span className="font-semibold text-muted-foreground">Admin</span>
           </span>
         </Link>
         {isAdmin && (

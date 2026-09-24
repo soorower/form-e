@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Manrope:wght@400;500;600;700;800&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Manrope:wght@400;500;600;700;800&family=Nunito:wght@700;800&display=swap");
 @import url("https://fonts.googleapis.com/css2?family=Noto+Sans+Bengali:wght@400;500;600;700&display=swap");
 @import "tailwindcss";
 @import "tw-animate-css";
@@ -11,6 +11,8 @@
 @theme {
   --font-sans: "Manrope", ui-sans-serif, system-ui, sans-serif;
   --drop-shadow-glow: 0 0 14px rgb(99 102 241 / 0.55);
+  /* The rounded face of the form-e wordmark (components/Wordmark.tsx). */
+  --font-brand: "Nunito", ui-rounded, ui-sans-serif, system-ui, sans-serif;
   --font-bangla: "Noto Sans Bengali", "Hind Siliguri", "Bangla", ui-sans-serif, system-ui, sans-serif;
 }
 
@@ -201,6 +203,224 @@
   }
   66% {
     transform: translate(-10px, 12px) rotate(-2deg);
+  }
+}
+
+/* Colours for the home page illustrations that must change with the theme. */
+:root {
+  --ill-hair: #1e1b4b;
+  --ill-navy: #312e81;
+  --ill-surface: #ffffff;
+}
+.dark {
+  --ill-hair: #a5a3f5;
+  --ill-navy: #6366f1;
+  --ill-surface: #1e1b3a;
+}
+
+/* Lane markings running along the road-shaped "e" of the wordmark. */
+.road-dash {
+  animation: road-dash 1.6s linear infinite;
+}
+@keyframes road-dash {
+  to {
+    stroke-dashoffset: -20;
+  }
+}
+
+/* The street scene along the bottom of the hero (landing/TransportScene.tsx). */
+:root {
+  --scene-city: #e0e7ff;
+  --scene-city-far: #eef2ff;
+  --scene-window: #c7d2fe;
+  --scene-tree: #bbf7d0;
+  --scene-trunk: #a7f3d0;
+  --scene-rail: #a5b4fc;
+  --scene-road: #475569;
+  --scene-kerb: #94a3b8;
+  --scene-dash: #f8fafc;
+}
+.dark {
+  --scene-city: #1c1b3d;
+  --scene-city-far: #15142e;
+  --scene-window: #fbbf24;
+  --scene-tree: #14532d;
+  --scene-trunk: #166534;
+  --scene-rail: #4338ca;
+  --scene-road: #1e293b;
+  --scene-kerb: #334155;
+  --scene-dash: #64748b;
+}
+/* A lane spans the scene; its vehicle waits just off one edge and the lane
+   slides the full width plus --lead (at least the vehicle's length). */
+.drive-ltr {
+  animation: drive-ltr 18s linear infinite;
+}
+.drive-rtl {
+  animation: drive-rtl 18s linear infinite;
+}
+@keyframes drive-ltr {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(calc(100% + var(--lead, 260px)));
+  }
+}
+@keyframes drive-rtl {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(calc(-100% - var(--lead, 260px)));
+  }
+}
+
+/* Loops for the home page illustrations (components/landing/Illustrations.tsx).
+   `transform-box: fill-box` makes each SVG part turn about its own box. */
+.ill-bob {
+  animation: ill-bob 4s ease-in-out infinite;
+}
+.ill-sway,
+.ill-leaf,
+.ill-bar,
+.ill-spin,
+.ill-write {
+  transform-box: fill-box;
+}
+.ill-sway {
+  transform-origin: 50% 100%;
+  animation: ill-sway 6s ease-in-out infinite;
+}
+.ill-leaf {
+  transform-origin: 50% 100%;
+  animation: ill-leaf 5s ease-in-out infinite;
+}
+.ill-bar {
+  transform-origin: 50% 100%;
+  animation: ill-bar 2.4s ease-in-out infinite;
+}
+.ill-spin {
+  transform-origin: center;
+  animation: ill-spin 6s linear infinite;
+}
+.ill-write {
+  transform-origin: 0 50%;
+  animation: ill-write 3.6s ease-out infinite;
+}
+.ill-blink {
+  animation: ill-blink 3s ease-in-out infinite;
+}
+.ill-draw {
+  stroke-dasharray: 300 300;
+  animation: ill-draw 6s ease-in-out infinite;
+}
+.ill-fill {
+  transform-origin: 0 50%;
+  animation: ill-fill 4.5s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}
+
+@keyframes ill-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+@keyframes ill-sway {
+  0%,
+  100% {
+    transform: rotate(-1.5deg);
+  }
+  50% {
+    transform: rotate(1.5deg);
+  }
+}
+@keyframes ill-leaf {
+  0%,
+  100% {
+    transform: rotate(-7deg);
+  }
+  50% {
+    transform: rotate(7deg);
+  }
+}
+@keyframes ill-bar {
+  0%,
+  100% {
+    transform: scaleY(0.45);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+@keyframes ill-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes ill-write {
+  0% {
+    transform: scaleX(0);
+  }
+  35%,
+  85% {
+    transform: scaleX(1);
+  }
+  100% {
+    transform: scaleX(0);
+  }
+}
+@keyframes ill-blink {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+@keyframes ill-draw {
+  0% {
+    stroke-dashoffset: 300;
+  }
+  45%,
+  70% {
+    stroke-dashoffset: 0;
+  }
+  100% {
+    stroke-dashoffset: -300;
+  }
+}
+@keyframes ill-fill {
+  0% {
+    transform: scaleX(0);
+  }
+  55%,
+  85% {
+    transform: scaleX(1);
+  }
+  100% {
+    transform: scaleX(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ill-bob,
+  .ill-sway,
+  .ill-leaf,
+  .ill-bar,
+  .ill-spin,
+  .ill-write,
+  .ill-blink,
+  .ill-draw,
+  .ill-fill,
+  .drive-ltr,
+  .drive-rtl,
+  .road-dash {
+    animation: none;
   }
 }
 
