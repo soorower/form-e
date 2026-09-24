@@ -147,7 +147,7 @@ function HomePage() {
           </div>
         ))}
 
-      <div className="flex flex-1 items-center justify-center py-4 sm:py-6">
+      <div className="flex flex-1 items-center justify-center py-4 sm:py-6 [@media(max-height:600px)]:py-2">
       <div className="rise-in relative z-10 flex max-w-4xl flex-col items-center gap-4 text-center sm:gap-5">
         {/* Logo / Brand mark */}
         <div className="group relative [@media(max-height:700px)]:hidden">
@@ -159,7 +159,7 @@ function HomePage() {
         </div>
 
         <div className="space-y-3">
-          <h1 className="text-[clamp(3rem,8svh,6rem)] leading-none">
+          <h1 className="text-[clamp(3.6rem,9.6svh,7.2rem)] leading-none">
             <Wordmark feature className="drop-shadow-sm" />
           </h1>
           <p className="mx-auto max-w-xl text-sm leading-relaxed font-medium text-muted-foreground/90 sm:text-base lg:text-lg">
@@ -169,19 +169,19 @@ function HomePage() {
         </div>
 
         {/* CTA Buttons */}
-        <div className="flex items-center justify-center gap-2 sm:gap-4">
+        <div className="mt-6 flex items-center justify-center gap-3 sm:mt-8 sm:gap-5">
           <Button
             size="lg"
-            className="group relative h-11 cursor-pointer overflow-hidden rounded-xl bg-indigo-600 px-5 text-sm font-bold text-white shadow-2xl shadow-indigo-500/20 transition-all hover:scale-105 active:scale-95 sm:px-8 sm:text-base"
+            className="group relative h-[3.3rem] cursor-pointer overflow-hidden rounded-xl border-indigo-300/50 bg-gradient-to-b from-indigo-500 via-indigo-600 to-violet-700 px-6 text-[1.05rem] font-bold text-white shadow-[inset_0_2px_0_rgba(255,255,255,0.45),0_6px_0_#3730a3,0_12px_18px_rgba(120,53,15,0.18),0_0_28px_8px_rgba(250,204,21,0.4)] transition-all duration-200 hover:-translate-y-1 hover:shadow-[inset_0_2px_0_rgba(255,255,255,0.5),0_8px_0_#3730a3,0_16px_22px_rgba(120,53,15,0.2),0_0_36px_12px_rgba(250,204,21,0.55)] active:translate-y-1 active:shadow-[inset_0_2px_0_rgba(255,255,255,0.3),0_2px_0_#3730a3,0_6px_12px_rgba(120,53,15,0.15),0_0_24px_6px_rgba(250,204,21,0.4)] sm:px-[2.4rem] sm:text-[1.2rem]"
             onMouseEnter={() => setHovered('create')}
             onMouseLeave={() => setHovered(null)}
             onClick={() => navigate({ to: '/surveys' })}
           >
-            <div className="absolute inset-0 bg-gradient-to-r from-indigo-400 to-violet-500 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
-            <span className="relative z-10 flex items-center gap-3">
+            <span aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-white/20 to-transparent" />
+            <span className="relative z-10 flex items-center gap-[0.9rem]">
               Get Started
               <svg
-                className={`size-6 transition-transform duration-300 ${hovered === 'create' ? 'translate-x-1' : ''}`}
+                className={`size-[1.8rem] transition-transform duration-300 ${hovered === 'create' ? 'translate-x-1' : ''}`}
                 fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}
               >
                 <path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
