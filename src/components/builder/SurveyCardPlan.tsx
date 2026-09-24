@@ -1,4 +1,9 @@
-import { useRef, useState, type ChangeEvent } from 'react'
+import {
+  useRef,
+  useState,
+  type ChangeEvent,
+  useEffect,
+} from 'react'
 import { useQuery } from 'convex/react'
 import { ChevronDown, ChevronUp, FileUp, Sparkles, Trash2, Upload } from 'lucide-react'
 import { api } from '../../../convex/_generated/api'
@@ -218,17 +223,11 @@ function BlockTable({
                   </TableCell>
                   <TableCell className="py-2 tabular-nums">{block.cards.length}</TableCell>
                   <TableCell className="py-2">
-                    <Input
-                      type="number"
-                      min={1}
-                      aria-label={`Scenarios per respondent in block ${index + 1}`}
+                    <ScenarioCountInput
                       value={block.scenariosPerRespondent}
-                      className="h-9 w-20"
-                      onChange={(event) => {
-                        const next = Number(event.target.value)
-                        if (!Number.isInteger(next)) return
-                        onBlockChange(block.id, { scenariosPerRespondent: Math.max(1, next) })
-                      }}
+                      readOnly={usesPlan}
+                      label={`Scenarios per respondent in block ${index + 1}`}
+                      onCommit={(next) => onBlockChange(block.id, { scenariosPerRespondent: next })}
                     />
                   </TableCell>
                   <TableCell className="py-2 text-muted-foreground">
@@ -309,6 +308,22 @@ function ScenarioPlan({
             scenariosPerRespondent: block.scenariosPerRespondent,
           })),
         )
+        // A sheet that does not fit the blocks used to be written anyway, and
+        // the panel then reported the block left without rows as fine.
+        if (split.missing > 0 || split.leftover > 0) {
+          const problem =
+            split.missing > 0
+              ? `The blocks ask for ${count(split.missing, 'scenario', 'scenarios')} more than the sheet has, so the last of them would get no rows and draw cards at random.`
+              : `${count(split.leftover, 'column', 'columns')} of the sheet would be left over.`
+          const anyway = window.confirm(
+            `${problem}\n\nUsually the fix is to set each block's "Scenarios each" so they add up to the sheet's ${count(parsed.scenariosPerRow, 'column', 'columns')}, then import again.\n\nImport it anyway?`,
+          )
+          if (!anyway) {
+            setError('The plan was not imported. Adjust the blocks and try again.')
+            setNotice(null)
+            return
+          }
+        }
         onPlanSplit(split.byBlock)
         const where = split.spans
           .map(
@@ -437,6 +452,10 @@ function ScenarioPlan({
             size="sm"
             className="text-destructive hover:text-destructive"
             onClick={() => {
+              const sure = window.confirm(
+                'Remove the scenario plan from every block? They draw cards at random from then on. This cannot be undone.',
+              )
+              if (!sure) return
               for (const block of blocks) onBlockChange(block.id, { scenarioPlan: [] })
               setNotice(null)
               setError(null)
@@ -588,5 +607,54 @@ function CardUsage({
         </ul>
       )}
     </div>
+  )
+}
+
+/**
+ * "Scenarios each", committed on blur or Enter. Writing on every keystroke
+ * snapped a cleared field to 1, so typing "9" made 19 — autosaved, and a live
+ * survey began handing out 19 cards per interview. Read-only once a plan is
+ * followed: the sheet's column count decides then.
+ */
+function ScenarioCountInput({
+  value,
+  readOnly,
+  label,
+  onCommit,
+}: {
+  value: number
+  readOnly: boolean
+  label: string
+  onCommit: (next: number) => void
+}) {
+  const [text, setText] = useState(String(value))
+  useEffect(() => setText(String(value)), [value])
+  function commit() {
+    const next = Number(text)
+    if (Number.isInteger(next) && next >= 1) {
+      if (next !== value) onCommit(next)
+    } else {
+      setText(String(value))
+    }
+  }
+  return (
+    <Input
+      type="number"
+      min={1}
+      inputMode="numeric"
+      aria-label={label}
+      value={text}
+      readOnly={readOnly}
+      title={readOnly ? 'Set by the scenario plan: as many as the sheet gives this block.' : undefined}
+      className="h-9 w-20"
+      onChange={(event) => setText(event.target.value)}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault()
+          commit()
+        }
+      }}
+    />
   )
 }

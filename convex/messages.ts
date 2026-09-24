@@ -1,6 +1,13 @@
 import { v } from 'convex/values'
 import { mutation, query } from './_generated/server'
-import { assertView, canView, questionnaireByAppId, requireApproved, viewerAccess } from './access'
+import {
+  assertView,
+  canView,
+  displayName,
+  questionnaireByAppId,
+  requireApproved,
+  viewerAccess,
+} from './access'
 
 const MAX_MESSAGE_LENGTH = 1000
 
@@ -23,15 +30,17 @@ export const list = query({
 })
 
 export const send = mutation({
-  args: { questionnaireId: v.string(), author: v.string(), text: v.string() },
-  handler: async (ctx, { questionnaireId, author, text }) => {
+  // `author` is ignored: the name is the signed-in account's, so nobody can
+  // post as someone else. Still accepted so calls from older tablets validate.
+  args: { questionnaireId: v.string(), author: v.optional(v.string()), text: v.string() },
+  handler: async (ctx, { questionnaireId, text }) => {
     const access = await requireApproved(ctx)
     const questionnaire = await questionnaireByAppId(ctx, questionnaireId)
     if (!questionnaire) return null
     assertView(access, questionnaire)
     const trimmed = text.trim().slice(0, MAX_MESSAGE_LENGTH)
-    const name = author.trim()
-    if (!trimmed || !name) return null
+    const name = displayName(access.user)
+    if (!trimmed) return null
     return ctx.db.insert('messages', {
       questionnaireId,
       author: name,

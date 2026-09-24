@@ -1,3 +1,4 @@
+import { followsPlan, planRows } from '#/lib/questionnaire/scenario-plan'
 import { useRef, useState, type ChangeEvent } from 'react'
 import {
   ChevronDown,
@@ -24,6 +25,7 @@ import {
   attributeLevels,
   columnKey,
   parseCardTable,
+  type ParsedDesign,
 } from '#/lib/questionnaire/cards'
 import {
   LANGUAGES,
@@ -119,6 +121,12 @@ export function ChoiceExperimentEditor({
   function importCards(source: string) {
     try {
       const design = parseCardTable(source, question)
+      const warnings = importWarnings(question, design)
+      if (warnings.length > 0 && !window.confirm(`${warnings.join('\n\n')}\n\nImport anyway?`)) {
+        setNotice('The cards were left as they were.')
+        setError(null)
+        return
+      }
       // A single card column cannot be "picked", so profile prompts use options.
       const prompts =
         design.layout === 'profile'
@@ -169,6 +177,14 @@ export function ChoiceExperimentEditor({
   }
 
   function clearCards() {
+    if (
+      question.cards.length > 0 &&
+      !window.confirm(
+        `Remove all ${question.cards.length} cards from this section? This cannot be undone.`,
+      )
+    ) {
+      return
+    }
     onChange({ cards: [], attributes: [], alternatives: [] })
     setNotice(null)
     setError(null)
@@ -835,4 +851,38 @@ export function ChoiceExperimentEditor({
       </div>
     </div>
   )
+}
+
+/**
+ * What a re-import would break, said before it happens rather than found
+ * out in the field: plan rows naming cards the new sheet does not have (such
+ * an interview had nothing to show), and column names that change, which put
+ * the levels of responses already recorded under "(earlier cards)" columns.
+ */
+function importWarnings(question: ChoiceExperimentQuestion, design: ParsedDesign): string[] {
+  const warnings: string[] = []
+  if (followsPlan(question)) {
+    const known = new Set(design.cards.map((card) => card.set))
+    const missing = [...new Set(planRows(question).flatMap((row) => row.sets))]
+      .filter((set) => !known.has(set))
+      .sort((a, b) => a - b)
+    if (missing.length > 0) {
+      const shown = missing.slice(0, 12).join(', ') + (missing.length > 12 ? ', …' : '')
+      warnings.push(
+        `The scenario plan names ${missing.length} card number${missing.length === 1 ? '' : 's'} the new cards do not have (${shown}). Interviews given those rows would have nothing to show until the plan is fixed.`,
+      )
+    }
+  }
+  if (question.cards.length > 0) {
+    const before = new Set(question.cards.flatMap((card) => Object.keys(card.levels)))
+    const after = new Set(design.cards.flatMap((card) => Object.keys(card.levels)))
+    const gone = [...before].filter((key) => !after.has(key))
+    if (gone.length > 0) {
+      const shown = gone.slice(0, 6).join(', ') + (gone.length > 6 ? ', …' : '')
+      warnings.push(
+        `The column names change (${shown} go away). Responses already recorded keep their levels under the old names in the export, marked "(earlier cards)".`,
+      )
+    }
+  }
+  return warnings
 }

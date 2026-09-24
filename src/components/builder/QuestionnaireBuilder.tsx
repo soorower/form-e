@@ -1,7 +1,12 @@
 import { Fragment } from 'react'
 import { ClipboardList } from 'lucide-react'
 import { insertAt, moveItem } from '#/lib/list'
-import { createQuestion, duplicateQuestion } from '#/lib/questionnaire/factory'
+import {
+  createQuestion,
+  duplicateQuestion,
+  pickText,
+  questionHasContent,
+} from '#/lib/questionnaire/factory'
 import type {
   ChoiceExperimentQuestion,
   Question,
@@ -39,8 +44,16 @@ export function QuestionnaireBuilder({ questionnaire, onUpdate }: QuestionnaireB
   const changeQuestion = (next: Question) =>
     setQuestions((list) => list.map((q) => (q.id === next.id ? next : q)))
 
-  const removeQuestion = (id: string) =>
+  const removeQuestion = (id: string) => {
+    const question = questions.find((q) => q.id === id)
+    // Deleting is immediate, autosaved and has no undo: ask first when the
+    // question holds anything (a 62-card block went with one tap).
+    if (question && questionHasContent(question)) {
+      const name = pickText(question.label, questionnaire.defaultLanguage) || 'this question'
+      if (!window.confirm(`Delete "${name}"? This cannot be undone.`)) return
+    }
     setQuestions((list) => list.filter((q) => q.id !== id))
+  }
 
   const duplicate = (id: string) =>
     setQuestions((list) => {

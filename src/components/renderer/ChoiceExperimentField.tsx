@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Input } from '#/components/ui/input'
 import {
   OTHER_ANSWER,
@@ -92,6 +92,10 @@ export function ChoiceExperimentField({
   // falls back on) has arrived.
   const fromServer = balanced || planned
   const canDraw = !fromServer || assignedSets !== undefined || exposure !== undefined
+  // The plan row named no card this block still has: the cards were
+  // re-imported after the plan was made. Said out loud rather than quietly
+  // drawing random cards with no plan row, which would look planned but not be.
+  const [planBroken, setPlanBroken] = useState(false)
 
   useEffect(() => {
     if (answer || !hasCards || !canDraw) return
@@ -105,6 +109,8 @@ export function ChoiceExperimentField({
         onChange({ planRow: row, scenarios })
         return
       }
+      setPlanBroken(true)
+      return
     }
     const assigned = balanced && assignedSets ? scenariosFromSets(question, assignedSets) : []
     onChange({
@@ -171,6 +177,18 @@ export function ChoiceExperimentField({
           )}
         >
           {intro}
+        </p>
+      )}
+
+      {planBroken && (
+        <p
+          role="alert"
+          className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-center text-sm font-medium text-destructive"
+        >
+          {t(
+            'This section’s scenario plan names cards it no longer has, so it cannot be shown. Ask the survey creator to correct the cards or the plan before collecting more responses.',
+            'এই অংশের সিনারিও প্ল্যানে এমন কার্ডের নম্বর আছে যা এখন আর নেই, তাই এটি দেখানো যাচ্ছে না। আরও উত্তর সংগ্রহের আগে জরিপ নির্মাতাকে কার্ড বা প্ল্যান ঠিক করতে বলুন।',
+          )}
         </p>
       )}
 

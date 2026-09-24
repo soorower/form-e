@@ -235,5 +235,9 @@ export const responseFields = {
   // Absent on responses to a survey that asks for none.
   respondent: v.optional(respondentDetails),
   answers: v.any(),
+  // When Submit was pressed on the tablet (its own clock, never after
+  // `receivedAt`); when the server recorded it. Rows written before this
+  // existed, and imported ones, have no `receivedAt`.
   submittedAt: v.number(),
+  receivedAt: v.optional(v.number()),
 }

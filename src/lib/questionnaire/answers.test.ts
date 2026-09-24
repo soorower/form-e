@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
   answerScenario,
+  asciiDigits,
+  hasAnyInput,
   isAnswered,
+  isNumberText,
   normalizeTableAnswer,
   scenarioChoice,
   setScenarioOther,
@@ -132,5 +135,55 @@ describe('isAnswered for a choice block with several questions', () => {
     // An older single-answer response still counts for a single-prompt block.
     block.prompts = [first]
     expect(isAnswered(block, { scenarios: [{ set: 1, levels: {}, choice: 'A' }] })).toBe(true)
+  })
+})
+
+describe('number answers', () => {
+  it('reads Bangla digits as digits', () => {
+    expect(asciiDigits('১২০০ টাকা')).toBe('1200 টাকা')
+    expect(isNumberText('১২০০')).toBe(true)
+    expect(isNumberText(' 12.5 ')).toBe(true)
+    expect(isNumberText('-3')).toBe(true)
+    expect(isNumberText('abc')).toBe(false)
+    expect(isNumberText('12,000')).toBe(false)
+    expect(isNumberText('')).toBe(false)
+  })
+
+  it('counts a number question as answered only by a number', () => {
+    const question = createQuestion('number')
+    expect(isAnswered(question, '১৫০০')).toBe(true)
+    expect(isAnswered(question, 'fifteen hundred')).toBe(false)
+    expect(isAnswered(createQuestion('short_text'), 'fifteen hundred')).toBe(true)
+  })
+})
+
+describe('"Other" answers', () => {
+  it('need the text that says what the other thing is', () => {
+    const question = createQuestion('choice_experiment')
+    if (question.type !== 'choice_experiment') throw new Error('expected a choice experiment')
+    const prompt = createPrompt('options', { en: 'Mode?', bn: '' })
+    prompt.key = 'mode'
+    prompt.allowOther = true
+    question.prompts = [prompt]
+    const scenario = { set: 1, levels: {}, choice: 'other', choices: { mode: 'other' } }
+    expect(isAnswered(question, { scenarios: [scenario] })).toBe(false)
+    expect(isAnswered(question, { scenarios: [{ ...scenario, other: { mode: '  ' } }] })).toBe(false)
+    expect(isAnswered(question, { scenarios: [{ ...scenario, other: { mode: 'Rickshaw' } }] })).toBe(true)
+  })
+})
+
+describe('hasAnyInput', () => {
+  it('sees typed answers and respondent details, but not cards merely drawn', () => {
+    const block = createQuestion('choice_experiment')
+    const name = createQuestion('short_text')
+    const questions = [block, name]
+    const drawn = { scenarios: [{ set: 2, levels: { Time_A: '5 Hours' }, choice: '' }] }
+    expect(hasAnyInput(questions, {})).toBe(false)
+    expect(hasAnyInput(questions, { [block.id]: drawn })).toBe(false)
+    expect(hasAnyInput(questions, { [name.id]: '   ' })).toBe(false)
+    expect(hasAnyInput(questions, { [name.id]: 'Karim' })).toBe(true)
+    expect(hasAnyInput(questions, { [block.id]: { scenarios: [{ ...drawn.scenarios[0], choice: 'A' }] } })).toBe(true)
+    expect(hasAnyInput(questions, {}, { phone: '01711' })).toBe(true)
+    expect(hasAnyInput(questions, {}, { phone: ' ' })).toBe(false)
   })
 })

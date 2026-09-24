@@ -17,7 +17,8 @@ import { activeEnumerators, formatSurveyNumber, pickText } from '#/lib/questionn
 export function SurveyEditorPage({ surveyId }: { surveyId: string }) {
   const paths = useSurveyPaths()
   const ready = useConvexReady()
-  const { questionnaire, update, savedAt, saveError } = useQuestionnaire(surveyId)
+  const { questionnaire, update, savedAt, saveError, dirty, backup, restoreBackup, discardBackup } =
+    useQuestionnaire(surveyId)
   // The number the next real response will get, so the preview shows what the
   // tablet will show. It was a fixed 1, which read as "numbering starts over".
   const nextSerial =
@@ -60,7 +61,13 @@ export function SurveyEditorPage({ surveyId }: { surveyId: string }) {
             {title}
           </h1>
           <p className="text-xs text-muted-foreground">
-            {savedAt ? `Saved ${new Date(savedAt).toLocaleTimeString()}` : 'Not saved yet'}
+            {dirty ? (
+              <span className="text-amber-700 dark:text-amber-300">Unsaved changes…</span>
+            ) : savedAt ? (
+              `Saved ${new Date(savedAt).toLocaleTimeString()}`
+            ) : (
+              'Not saved yet'
+            )}
             {' · '}
             {questionCount} {questionCount === 1 ? 'question' : 'questions'}
           </p>
@@ -95,6 +102,26 @@ export function SurveyEditorPage({ surveyId }: { surveyId: string }) {
         </Button>
       </div>
 
+      {backup && (
+        <div
+          role="alert"
+          className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-300"
+        >
+          <p>
+            Edits from {new Date(backup.savedAt).toLocaleString()} were kept on this device but
+            never reached the server. Restore them, or keep what the server has.
+          </p>
+          <div className="flex gap-2">
+            <Button size="sm" onClick={restoreBackup}>
+              Restore
+            </Button>
+            <Button size="sm" variant="outline" onClick={discardBackup}>
+              Discard
+            </Button>
+          </div>
+        </div>
+      )}
+
       <Tabs value={tab} onValueChange={(value) => setTab(String(value))}>
         <TabsList>
           <TabsTrigger value="build">
@@ -110,7 +137,9 @@ export function SurveyEditorPage({ surveyId }: { surveyId: string }) {
             Responses
           </TabsTrigger>
         </TabsList>
-        <TabsContent value="build" className="pt-4">
+        {/* Kept mounted: switching to the preview used to throw away a card
+            table pasted but not yet imported. */}
+        <TabsContent value="build" keepMounted className="pt-4">
           <QuestionnaireBuilder questionnaire={questionnaire} onUpdate={update} />
         </TabsContent>
         <TabsContent value="preview" className="pt-4">

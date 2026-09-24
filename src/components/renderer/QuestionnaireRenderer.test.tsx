@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, createEvent, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { createQuestion, createQuestionnaire, text } from '#/lib/questionnaire/factory'
 import type {
@@ -7,6 +7,7 @@ import type {
   Questionnaire,
   SurveyResponse,
 } from '#/lib/questionnaire/types'
+import { RefusedResponseError } from '#/lib/questionnaire/outbox'
 import { QuestionnaireRenderer, type SubmitOutcome } from './QuestionnaireRenderer'
 
 function survey(): Questionnaire {
@@ -22,6 +23,7 @@ function answerAndSubmit(answer: string) {
 describe('QuestionnaireRenderer saving', () => {
   beforeAll(() => {
     window.scrollTo = vi.fn()
+    Element.prototype.scrollIntoView = vi.fn()
     vi.spyOn(console, 'error').mockImplementation(() => undefined)
   })
 
@@ -258,5 +260,44 @@ describe('QuestionnaireRenderer scenario plan', () => {
     )
     expect((await screen.findByText(/Scenario plan row/)).textContent).toBe('Scenario plan row: 2')
     expect(levelCells()).toEqual(['3 Hours', '1 Hours', '3 Hours'])
+  })
+})
+
+describe('QuestionnaireRenderer keys and notices', () => {
+  beforeAll(() => {
+    window.scrollTo = vi.fn()
+    Element.prototype.scrollIntoView = vi.fn()
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+  })
+
+  afterEach(cleanup)
+
+  it('does not submit the interview on Enter in a text field', () => {
+    const onSubmit = vi.fn<(response: SurveyResponse) => Promise<string>>().mockResolvedValue('T-001')
+    render(<QuestionnaireRenderer questionnaire={survey()} onSubmit={onSubmit} />)
+    const input = screen.getByRole('textbox')
+    fireEvent.change(input, { target: { value: 'Teacher' } })
+    const enter = createEvent.keyDown(input, { key: 'Enter' })
+    fireEvent(input, enter)
+    // The browser's implicit submission is what used to record the response.
+    expect(enter.defaultPrevented).toBe(true)
+    expect(onSubmit).not.toHaveBeenCalled()
+  })
+
+  it('heads a step as a step, not with a question number that disagrees with the card', () => {
+    render(<QuestionnaireRenderer questionnaire={survey()} mode="steps" />)
+    expect(screen.getByText(/^Step/)).toBeTruthy()
+    expect(screen.queryByText(/^Question/)).toBeNull()
+  })
+
+  it('gives the server’s reason when it refused the response', async () => {
+    const onSubmit = vi
+      .fn<(response: SurveyResponse) => Promise<string>>()
+      .mockRejectedValue(new RefusedResponseError('This survey no longer exists.'))
+    render(<QuestionnaireRenderer questionnaire={survey()} onSubmit={onSubmit} />)
+    answerAndSubmit('Teacher')
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toMatch(/did not accept this response: This survey no longer exists/)
+    expect(alert.textContent).not.toMatch(/internet connection/)
   })
 })

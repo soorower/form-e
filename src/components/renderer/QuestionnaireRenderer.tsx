@@ -1,9 +1,10 @@
-import { useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { Check, CloudOff, EyeOff } from 'lucide-react'
 import { Button } from '#/components/ui/button'
 import { Input } from '#/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '#/components/ui/select'
-import { isAnswered } from '#/lib/questionnaire/answers'
+import { hasAnyInput, isAnswered } from '#/lib/questionnaire/answers'
+import { RefusedResponseError } from '#/lib/questionnaire/outbox'
 import {
   LANGUAGE_LABELS,
   activeEnumerators,
@@ -65,6 +66,11 @@ export interface SubmitOutcome {
    * returns; the confirmation screen says so instead of showing a number.
    */
   pending?: boolean
+  /**
+   * Pending, but the device could not keep a copy (storage full or blocked):
+   * only this open page holds it, and the confirmation says to keep it open.
+   */
+  unstored?: boolean
 }
 
 interface QuestionnaireRendererProps {
@@ -92,6 +98,11 @@ interface QuestionnaireRendererProps {
   /** "Start a new response" was pressed: time for a new `responseId`. */
   onRestart?: () => void
   /**
+   * Whether the respondent has entered anything not yet submitted, so the
+   * page can hold back navigation that would lose it.
+   */
+  onDirtyChange?: (dirty: boolean) => void
+  /**
    * Called with the completed response. May return the survey number actually
    * assigned by the server (or a `SubmitOutcome`), which is then shown on the
    * confirmation screen. Rejecting keeps the answers on screen with a message,
@@ -118,6 +129,7 @@ export function QuestionnaireRenderer({
   cardDraws,
   responseId: givenResponseId,
   onRestart,
+  onDirtyChange,
   onSubmit,
   mode = 'page',
 }: QuestionnaireRendererProps) {
@@ -130,7 +142,9 @@ export function QuestionnaireRenderer({
   const [submitting, setSubmitting] = useState(false)
   // Set when the response is kept on this device rather than on the server yet.
   const [pendingUpload, setPendingUpload] = useState(false)
-  const [saveFailed, setSaveFailed] = useState(false)
+  const [unstored, setUnstored] = useState(false)
+  // '' for a failure the enumerator can retry, the server's reason for a refusal.
+  const [saveFailed, setSaveFailed] = useState<string | null>(null)
   // One id per interview, kept across failed attempts: the server ignores an
   // id it already holds, so pressing Submit again can never record it twice.
   const responseId = useRef<string | null>(null)
@@ -155,6 +169,12 @@ export function QuestionnaireRenderer({
   const missing = questionnaire.questions
     .filter((question) => question.required && !isAnswered(question, answers[question.id]))
     .map((question) => question.id)
+
+  // What leaving the page now would lose.
+  const dirty = submitted === null && hasAnyInput(questionnaire.questions, answers, respondent)
+  useEffect(() => {
+    onDirtyChange?.(dirty)
+  }, [dirty, onDirtyChange])
 
   // The respondent's own details, when the survey asks for any. In steps mode
   // they are the first step, before question 1; on one page they sit under the
@@ -205,7 +225,7 @@ export function QuestionnaireRenderer({
       return
     }
     setSubmitting(true)
-    setSaveFailed(false)
+    setSaveFailed(null)
     responseId.current ??= uid()
     try {
       const result = await onSubmit({
@@ -222,12 +242,15 @@ export function QuestionnaireRenderer({
       const outcome: SubmitOutcome =
         typeof result === 'string' ? { surveyNumber: result } : (result ?? {})
       setPendingUpload(outcome.pending === true)
+      setUnstored(outcome.unstored === true)
       setSubmitted(outcome.pending ? '' : (outcome.surveyNumber ?? meta?.surveyNumber ?? ''))
     } catch (error) {
       // Without this the button simply went back to "Submit" and the
-      // interview looked saved. The answers stay on screen for another try.
+      // interview looked saved. The answers stay on screen for another try;
+      // a refusal carries the server's reason, anything else reads as a
+      // connection problem.
       console.error('Saving the response failed', error)
-      setSaveFailed(true)
+      setSaveFailed(error instanceof RefusedResponseError ? error.message : '')
     } finally {
       setSubmitting(false)
     }
@@ -240,7 +263,8 @@ export function QuestionnaireRenderer({
     setAttempted(false)
     setSubmitting(false)
     setPendingUpload(false)
-    setSaveFailed(false)
+    setUnstored(false)
+    setSaveFailed(null)
     setSubmitted(null)
     setStep(0)
     setStepAttempted(false)
@@ -278,15 +302,17 @@ export function QuestionnaireRenderer({
     goTo(step + 1)
   }
 
-  /** In steps mode Enter in a text field means Next, not Submit. */
+  /**
+   * Enter in a text field never submits the whole interview: on one page it
+   * used to record the response, survey number and all, the moment a "Go"
+   * key was pressed with every required answer in. In steps mode it means Next.
+   */
   function onFormKeyDown(event: KeyboardEvent<HTMLFormElement>) {
-    if (!stepped || event.key !== 'Enter') return
+    if (event.key !== 'Enter') return
     const target = event.target as HTMLElement
     if (target.tagName !== 'INPUT') return
-    if (step < stepCount - 1) {
-      event.preventDefault()
-      next()
-    }
+    event.preventDefault()
+    if (stepped && step < stepCount - 1) next()
   }
 
   if (submitted !== null && !onSubmit) {
@@ -326,17 +352,28 @@ export function QuestionnaireRenderer({
           {pendingUpload ? <CloudOff className="size-7" /> : <Check className="size-7" />}
         </span>
         <h2 className="text-2xl font-bold">
-          {pendingUpload
-            ? t('Saved on this device', 'এই ডিভাইসে সংরক্ষিত হয়েছে')
-            : t('Response recorded', 'উত্তর সংরক্ষিত হয়েছে')}
+          {unstored
+            ? t('Waiting for the connection', 'সংযোগের অপেক্ষায়')
+            : pendingUpload
+              ? t('Saved on this device', 'এই ডিভাইসে সংরক্ষিত হয়েছে')
+              : t('Response recorded', 'উত্তর সংরক্ষিত হয়েছে')}
         </h2>
-        {pendingUpload && (
+        {unstored ? (
           <p className="max-w-md text-muted-foreground">
             {t(
-              'There is no connection right now. The response is kept on this device and is sent by itself when the internet is back; it gets its survey number then.',
-              'এই মুহূর্তে ইন্টারনেট সংযোগ নেই। উত্তরটি এই ডিভাইসে রাখা আছে, সংযোগ ফিরে এলে নিজে থেকেই পাঠানো হবে এবং তখনই জরিপ নম্বর পাবে।',
+              'There is no connection, and this device could not keep a copy. Keep this page open until the internet is back: the response is sent by itself then and gets its survey number.',
+              'ইন্টারনেট সংযোগ নেই, আর এই ডিভাইসে একটি কপি রাখাও যায়নি। ইন্টারনেট ফিরে না আসা পর্যন্ত এই পাতাটি খোলা রাখুন: তখন উত্তরটি নিজে থেকেই পাঠানো হবে এবং জরিপ নম্বর পাবে।',
             )}
           </p>
+        ) : (
+          pendingUpload && (
+            <p className="max-w-md text-muted-foreground">
+              {t(
+                'There is no connection right now. The response is kept on this device and is sent by itself when the internet is back; it gets its survey number then.',
+                'এই মুহূর্তে ইন্টারনেট সংযোগ নেই। উত্তরটি এই ডিভাইসে রাখা আছে, সংযোগ ফিরে এলে নিজে থেকেই পাঠানো হবে এবং তখনই জরিপ নম্বর পাবে।',
+              )}
+            </p>
+          )
         )}
         {submitted && (
           <p className="text-lg">
@@ -498,8 +535,10 @@ export function QuestionnaireRenderer({
           <div className="space-y-2 px-1">
             <div className="flex items-center justify-between text-sm text-muted-foreground">
               <span>
-                {/* The details step shows no question, so it counts as a step. */}
-                {onRespondentStep ? t('Step', 'ধাপ') : t('Question', 'প্রশ্ন')}{' '}
+                {/* Steps, not question numbers: a block's steps carry several
+                    numbers and the details step none, so "Question 3 / 9"
+                    contradicted the number printed on the card. */}
+                {t('Step', 'ধাপ')}{' '}
                 <span className="font-semibold text-foreground">{step + 1}</span> / {stepCount}
               </span>
               <span>{Math.round(((step + 1) / stepCount) * 100)}%</span>
@@ -547,7 +586,7 @@ export function QuestionnaireRenderer({
             </p>
           )}
 
-          {saveFailed && <SaveFailedNotice lang={lang} />}
+          {saveFailed !== null && <SaveFailedNotice lang={lang} reason={saveFailed} />}
 
           <div className="flex items-center justify-between gap-3 pt-2">
             <Button
@@ -625,7 +664,7 @@ export function QuestionnaireRenderer({
               )}
             </p>
           )}
-          {saveFailed && <SaveFailedNotice lang={lang} />}
+          {saveFailed !== null && <SaveFailedNotice lang={lang} reason={saveFailed} />}
           <Button
             type="submit"
             size="lg"
@@ -640,16 +679,25 @@ export function QuestionnaireRenderer({
   )
 }
 
-/** Shown beside Submit when the response could not be saved; nothing is lost. */
-function SaveFailedNotice({ lang }: { lang: Lang }) {
+/**
+ * Shown beside Submit when the response could not be saved; nothing is lost.
+ * With a `reason` the server turned it down on purpose, so "check the
+ * connection" would send the enumerator looking in the wrong place.
+ */
+function SaveFailedNotice({ lang, reason }: { lang: Lang; reason: string }) {
+  const bn = lang === 'bn'
   return (
     <p
       role="alert"
       className="w-full rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-center text-sm font-medium text-destructive"
     >
-      {lang === 'bn'
-        ? 'উত্তরটি সংরক্ষণ করা যায়নি। আপনার উত্তরগুলো এখানেই আছে — ইন্টারনেট সংযোগ দেখে আবার “জমা দিন” চাপুন।'
-        : 'This response could not be saved. Your answers are still here: check the internet connection and press Submit again.'}
+      {reason
+        ? bn
+          ? `সার্ভার এই উত্তরটি গ্রহণ করেনি: ${reason} আপনার উত্তরগুলো এখানেই আছে।`
+          : `The server did not accept this response: ${reason} Your answers are still here.`
+        : bn
+          ? 'উত্তরটি সংরক্ষণ করা যায়নি। আপনার উত্তরগুলো এখানেই আছে — ইন্টারনেট সংযোগ দেখে আবার “জমা দিন” চাপুন।'
+          : 'This response could not be saved. Your answers are still here: check the internet connection and press Submit again.'}
     </p>
   )
 }

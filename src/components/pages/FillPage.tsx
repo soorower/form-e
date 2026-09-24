@@ -1,7 +1,8 @@
-import { Link } from '@tanstack/react-router'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { Link, useBlocker } from '@tanstack/react-router'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowLeft } from 'lucide-react'
 import { useMutation, useQuery } from 'convex/react'
+import { ConvexError } from 'convex/values'
 import { api } from '../../../convex/_generated/api'
 import { Button } from '#/components/ui/button'
 import {
@@ -18,8 +19,14 @@ import { decodeQuestionnaire } from '#/lib/convex/questionnaire-codec'
 import { encodeAnswers } from '#/lib/convex/response-codec'
 import { formatSurveyNumber, uid } from '#/lib/questionnaire/factory'
 import {
+  RefusedResponseError,
+  clearRefused,
+  forgetOpenInterview,
+  markRefused,
   queueResponse,
   readOutbox,
+  recallOpenInterview,
+  rememberOpenInterview,
   removeFromOutbox,
   type PendingResponse,
 } from '#/lib/questionnaire/outbox'
@@ -50,19 +57,18 @@ const DRAW_TIMEOUT_MS = 6_000
 export function FillPage({ surveyId, steps }: { surveyId: string; steps?: boolean }) {
   const paths = useSurveyPaths()
   const ready = useConvexReady()
-  const questionnaire = decodeQuestionnaire(
-    useQuery(api.questionnaires.get, ready ? { id: surveyId } : 'skip'),
-  )
+  const stored = useQuery(api.questionnaires.get, ready ? { id: surveyId } : 'skip')
+  // Decoded once per server row: decoding on every render made a new object
+  // each time, and everything keyed on it re-ran for nothing.
+  const questionnaire = useMemo(() => decodeQuestionnaire(stored), [stored])
   const serial = useQuery(api.responses.nextSerial, ready ? { questionnaireId: surveyId } : 'skip')
-  const exposure = useQuery(
-    api.responses.cardExposure,
-    ready ? { questionnaireId: surveyId } : 'skip',
-  )
   const submit = useMutation(api.responses.submit)
   const drawCards = useMutation(api.responses.drawCards)
   const abandonDraw = useMutation(api.responses.abandonDraw)
-  const { viewer, isSurveyor, canBuild } = useViewer()
+  const { viewer, isSurveyor, canBuild, loading: viewerLoading } = useViewer()
   const [enumerator, setEnumerator] = useState('')
+  // Whether the interview on screen has answers that are not submitted yet.
+  const [dirty, setDirty] = useState(false)
   // The id the interview on screen is saved under. Known from the start, not
   // only at Submit, because the server reserves the interview's cards under it.
   const [interviewId, setInterviewId] = useState(() => uid())
@@ -70,8 +76,11 @@ export function FillPage({ surveyId, steps }: { surveyId: string; steps?: boolea
   const [drawn, setDrawn] = useState<{ id: string; sets: QuestionnaireCardDraws | null } | null>(
     null,
   )
-  // Responses kept on this device that the server has not confirmed yet.
-  const [waiting, setWaiting] = useState(0)
+  // Responses kept on this device: not confirmed by the server yet, or
+  // refused by it (those carry the reason and wait for a deliberate retry).
+  const [outbox, setOutbox] = useState<PendingResponse[]>([])
+  const waiting = outbox.filter((response) => response.refused === undefined).length
+  const refused = outbox.filter((response) => response.refused !== undefined)
   const inFlight = useRef(new Set<string>())
   // Interviews that reached Submit. Their cards are accounted for by the
   // response (or by the outbox copy waiting to be sent), so they are never
@@ -104,6 +113,16 @@ export function FillPage({ surveyId, steps }: { surveyId: string; steps?: boolea
         question.cards.length > 0 &&
         (question.drawMode === 'balanced' || followsPlan(question)),
     ) ?? false
+
+  // The counts only matter once a block has to pick for itself, which is
+  // when the server did not answer in time. Subscribing on every tablet
+  // meant every submit anywhere re-read the whole survey's responses for
+  // every open form, and past Convex's read limit that took the form down.
+  const gaveUp = drawn?.id === interviewId && drawn.sets === null
+  const exposure = useQuery(
+    api.responses.cardExposure,
+    ready && serverDraws && gaveUp ? { questionnaireId: surveyId } : 'skip',
+  )
 
   /**
    * These blocks get their cards from the server, which counts what every
@@ -168,12 +187,24 @@ export function FillPage({ surveyId, steps }: { surveyId: string; steps?: boolea
           language: pending.language,
           ...(pending.respondent ? { respondent: pending.respondent } : {}),
           answers: encodeAnswers(pending.answers),
+          // When Submit was pressed, so an interview kept on an offline
+          // tablet is dated by the interview, not by the sync.
+          collectedAt: pending.queuedAt,
         })
         removeFromOutbox(pending.id)
         return saved
+      } catch (error) {
+        // A rejection is the server's decision, not the network's (Convex
+        // holds a request while offline rather than failing it), so sending
+        // the same copy again by itself would only be refused again. It is
+        // kept, with the reason, until someone retries or discards it.
+        const reason =
+          error instanceof ConvexError ? String(error.data) : 'The server could not store it.'
+        markRefused(pending.id, reason)
+        throw new RefusedResponseError(reason)
       } finally {
         inFlight.current.delete(pending.id)
-        setWaiting(readOutbox().length)
+        setOutbox(readOutbox())
       }
     },
     [submit],
@@ -182,20 +213,47 @@ export function FillPage({ surveyId, steps }: { surveyId: string; steps?: boolea
   /** Whatever an earlier visit could not deliver, from any survey on this device. */
   const flushOutbox = useCallback(() => {
     const pending = readOutbox()
-    setWaiting(pending.length)
-    for (const response of pending) send(response).catch(() => undefined)
+    setOutbox(pending)
+    for (const response of pending) {
+      if (response.refused === undefined) send(response).catch(() => undefined)
+    }
   }, [send])
 
-  // Closing the tab or walking away from the page gives the cards back.
+  /** "Try again" on the refused responses: back in line, then sent. */
+  const retryRefused = useCallback(() => {
+    clearRefused()
+    flushOutbox()
+  }, [flushOutbox])
+
+  function discardRefused(id: string) {
+    const sure = window.confirm(
+      'Discard this response for good? It is not on the server and cannot be recovered afterwards.',
+    )
+    if (!sure) return
+    removeFromOutbox(id)
+    setOutbox(readOutbox())
+  }
+
+  // Closing the tab or walking away from the page gives the cards back. That
+  // release is best effort (it needs an open socket, and a discarded tab
+  // fires no pagehide at all), so the interview id is also noted on the
+  // device and the next fill page opened here hands back whatever the last
+  // one was still holding; otherwise other tablets skipped those cards for
+  // two hours.
   useEffect(() => {
     if (!ready || !serverDraws) return
+    const previous = recallOpenInterview()
+    if (previous && previous !== interviewId) {
+      abandonDraw({ responseId: previous }).catch(() => undefined)
+    }
+    rememberOpenInterview(interviewId)
     const release = () => abandon(interviewId)
     window.addEventListener('pagehide', release)
     return () => {
       window.removeEventListener('pagehide', release)
       release()
     }
-  }, [ready, serverDraws, interviewId, abandon])
+  }, [ready, serverDraws, interviewId, abandon, abandonDraw])
 
   useEffect(() => {
     if (!ready) return
@@ -212,6 +270,7 @@ export function FillPage({ surveyId, steps }: { surveyId: string; steps?: boolea
    */
   async function handleSubmit(response: SurveyResponse): Promise<SubmitOutcome> {
     submitted.current.add(response.id)
+    forgetOpenInterview(response.id)
     const pending: PendingResponse = {
       id: response.id,
       questionnaireId: response.questionnaireId,
@@ -221,13 +280,11 @@ export function FillPage({ surveyId, steps }: { surveyId: string; steps?: boolea
       answers: response.answers,
       queuedAt: Date.now(),
     }
-    const stored = queueResponse(pending)
+    const kept = queueResponse(pending)
     const sending = send(pending)
-    // Kept on the device, so a late failure is retried by the next flush.
+    // Kept on the device, so a late refusal shows up in the notice below.
     sending.catch(() => undefined)
     const offline = typeof navigator !== 'undefined' && navigator.onLine === false
-    // Without a stored copy the only safe thing is to wait for the server.
-    if (!stored) return { surveyNumber: (await sending)?.surveyNumber }
 
     const timedOut = Symbol('timed out')
     const saved = await Promise.race([
@@ -238,8 +295,11 @@ export function FillPage({ surveyId, steps }: { surveyId: string; steps?: boolea
     ])
     if (saved === timedOut || saved === null) {
       // Counted only now, so the notice does not flash during a normal save.
-      setWaiting(readOutbox().length)
-      return { pending: true }
+      setOutbox(readOutbox())
+      // With no copy on the device (storage full or blocked) only this open
+      // page holds the response; waiting here for ever, button greyed out,
+      // was the alternative.
+      return { pending: true, unstored: !kept }
     }
     return { surveyNumber: saved.surveyNumber }
   }
@@ -249,7 +309,10 @@ export function FillPage({ surveyId, steps }: { surveyId: string; steps?: boolea
     setDeviceEnumerator(name)
   }
 
-  if (questionnaire === undefined) {
+  // Also while the viewer is unknown: a surveyor's form used to open as the
+  // one-page version and remount as the stepper a moment later, losing what
+  // had been entered in between.
+  if (questionnaire === undefined || viewerLoading) {
     return <main className="page-wrap px-4 py-12 text-muted-foreground">Loading…</main>
   }
 
@@ -335,8 +398,8 @@ export function FillPage({ surveyId, steps }: { surveyId: string; steps?: boolea
         </div>
       )}
 
+      <InterviewGuard active={dirty} />
       <QuestionnaireRenderer
-        key={stepped ? 'steps' : 'page'}
         questionnaire={questionnaire}
         meta={
           account
@@ -361,6 +424,7 @@ export function FillPage({ surveyId, steps }: { surveyId: string; steps?: boolea
           abandon(interviewId)
           setInterviewId(uid())
         }}
+        onDirtyChange={setDirty}
         onSubmit={handleSubmit}
         mode={stepped ? 'steps' : 'page'}
       />
@@ -383,6 +447,35 @@ export function FillPage({ surveyId, steps }: { surveyId: string; steps?: boolea
           </Button>
         </div>
       )}
+      {refused.length > 0 && (
+        <div
+          role="alert"
+          className="mx-auto mt-4 w-full max-w-3xl rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+        >
+          <p className="font-medium">
+            {refused.length === 1
+              ? 'The server did not accept 1 response kept on this device.'
+              : `The server did not accept ${refused.length} responses kept on this device.`}{' '}
+            They stay here until you try again or discard them.
+          </p>
+          <ul className="mt-2 space-y-1.5">
+            {refused.map((response) => (
+              <li key={response.id} className="flex flex-wrap items-center justify-between gap-2">
+                <span>
+                  {new Date(response.queuedAt).toLocaleString()} · {response.enumerator || '(no name)'}
+                  : {response.refused}
+                </span>
+                <Button type="button" variant="outline" size="sm" onClick={() => discardRefused(response.id)}>
+                  Discard
+                </Button>
+              </li>
+            ))}
+          </ul>
+          <Button type="button" variant="outline" size="sm" className="mt-2" onClick={retryRefused}>
+            Try again
+          </Button>
+        </div>
+      )}
       <p className="mt-8 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-center text-xs text-muted-foreground">
         {lockedName && <span>Collecting as {lockedName}</span>}
         {account && (
@@ -394,4 +487,21 @@ export function FillPage({ surveyId, steps }: { surveyId: string; steps?: boolea
       </p>
     </main>
   )
+}
+
+/**
+ * Holds back leaving the page while the interview has answers that are not
+ * submitted: a tap on a header link, a back-swipe, a reload. The confirm is
+ * the browser's own, so it works however the app's own dialogs are doing.
+ */
+function InterviewGuard({ active }: { active: boolean }) {
+  useBlocker({
+    shouldBlockFn: () =>
+      active &&
+      !window.confirm(
+        'This interview has not been submitted. Leave the page and lose its answers?',
+      ),
+    enableBeforeUnload: () => active,
+  })
+  return null
 }

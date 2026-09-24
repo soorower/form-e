@@ -195,6 +195,24 @@ function StatusBadge({ status }: { status: Person['status'] }) {
   )
 }
 
+/**
+ * A password sign-up proves nothing about its address, so an invitation or
+ * assignment sent to that address applies only once the admin approves this
+ * very account (convex/access.ts). Says so, so a "Waiting" account whose
+ * address is in a group is not a puzzle.
+ */
+function UnverifiedBadge({ className }: { className?: string }) {
+  return (
+    <Badge
+      variant="outline"
+      className={className}
+      title="Signed up with a password, so nothing proved this account owns its address. Groups and survey assignments for the address apply only after you approve this account."
+    >
+      Unverified email
+    </Badge>
+  )
+}
+
 /** Signed-up accounts the admin has not decided on yet. */
 function pendingUsers(users: Person[]): Person[] {
   return users.filter((person) => person.role !== 'admin' && person.status === 'pending')
@@ -395,6 +413,7 @@ function PendingRow({
           {person.name && person.email ? `${person.email} · ` : ''}
           signed up {new Date(person.signedUpAt).toLocaleDateString()}
         </p>
+        {!person.emailVerified && <UnverifiedBadge className="mt-1" />}
       </div>
       <RoleSelect value={role} onChange={setRole} label={`Role for ${person.email ?? 'this person'}`} />
       {role === 'surveyor' ? (
@@ -752,7 +771,10 @@ function PeopleTab({ users, groups }: { users: Person[]; groups: Group[] }) {
                       )}
                     </TableCell>
                     <TableCell>
-                      <StatusBadge status={person.status} />
+                      <div className="flex flex-wrap gap-1">
+                        <StatusBadge status={person.status} />
+                        {!person.emailVerified && <UnverifiedBadge />}
+                      </div>
                     </TableCell>
                     <TableCell>
                       {person.role === 'admin' ? (

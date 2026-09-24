@@ -90,6 +90,36 @@ export function defaultExportLanguage(questionnaire: Questionnaire): Lang {
 }
 
 /**
+ * 2026-09-24T09:15:00+06:00: the time as the exporting browser's clock shows
+ * it, offset included, so 09:15 reads as 09:15 in Excel and R alike. The
+ * plain UTC form ("03:15Z") was six hours off for anyone reading it as local.
+ */
+export function localIso(timestamp: number): string {
+  const date = new Date(timestamp)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const offset = -date.getTimezoneOffset()
+  const sign = offset >= 0 ? '+' : '-'
+  const magnitude = Math.abs(offset)
+  return (
+    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
+    `T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}` +
+    `${sign}${pad(Math.floor(magnitude / 60))}:${pad(magnitude % 60)}`
+  )
+}
+
+/**
+ * Marks a level column that a block no longer has. When the creator re-imports
+ * the cards under other column names after responses exist, the earlier
+ * responses' snapshots are still exported, under their own names, rather than
+ * dropped as blanks.
+ */
+export const EARLIER_CARDS_SUFFIX = ' (earlier cards)'
+
+export function earlierCardsColumn(key: string): string {
+  return `${key}${EARLIER_CARDS_SUFFIX}`
+}
+
+/**
  * Names the row of the creator's scenario plan an interview was given, beside
  * the card's own `Set`. The plan's sheet calls it "Set" too, but that name is
  * already taken here by the design card, so the column says "Plan row".
@@ -160,6 +190,9 @@ export function responsesToRows(
       'Response ID': response.id,
       'Survey no.': response.surveyNumber,
       Enumerator: response.enumerator,
+      // The code the admin gave a signed-in surveyor (S01, …): two surveyors
+      // with one name stay apart, and it is the interviewer id analysts key on.
+      'Surveyor code': response.surveyorCode ?? '',
       // Only the details this survey asks for, always present as columns so a
       // respondent who left one blank does not shift the table.
       ...Object.fromEntries(
@@ -168,7 +201,10 @@ export function responsesToRows(
           response.respondent?.[field.key] ?? '',
         ]),
       ),
-      'Submitted at': new Date(response.submittedAt).toISOString(),
+      // When Submit was pressed on the tablet, and when the server received
+      // it: hours or a day later for a tablet that was out of signal.
+      'Submitted at': localIso(response.submittedAt),
+      'Received at': response.receivedAt === undefined ? '' : localIso(response.receivedAt),
       Language: response.language,
     }
     const scenarioRows: ExportRow[] = []
@@ -218,11 +254,16 @@ export function responsesToRows(
             Scenario: scenarioIndex + 1,
             Set: scenario.set,
           }
+          const designKeys = new Set<string>()
           for (const alternative of question.alternatives) {
             for (const attribute of question.attributes) {
               const key = columnKey(question, attribute.key, alternative.key)
+              designKeys.add(key)
               row[key] = scenario.levels[key] ?? ''
             }
+          }
+          for (const [key, level] of Object.entries(scenario.levels)) {
+            if (!designKeys.has(key)) row[earlierCardsColumn(key)] = level
           }
           if (question.prompts.length === 0) {
             row.Choice = scenario.choice
@@ -270,6 +311,13 @@ export function exportColumns(questionnaire: Questionnaire, rows: ExportRow[]): 
       if (!choices.includes(column)) choices.push(column)
     }
   }
+  // Levels kept from an earlier card layout sit with the levels, not among
+  // the respondent's answers.
+  for (const row of rows) {
+    for (const key of Object.keys(row)) {
+      if (key.endsWith(EARLIER_CARDS_SUFFIX) && !trailing.includes(key)) trailing.push(key)
+    }
+  }
   trailing.push(...choices)
   for (const row of rows) {
     for (const key of Object.keys(row)) {
@@ -280,8 +328,20 @@ export function exportColumns(questionnaire: Questionnaire, rows: ExportRow[]): 
   return [...columns, ...trailing.filter((key) => used.has(key))]
 }
 
+/** Plain numbers, with an optional sign: safe to hand to a spreadsheet as they are. */
+const NUMERIC_TEXT = /^[+-]?\d+(\.\d+)?$/
+
+/**
+ * A cell that starts with =, +, -, @ or a tab is run as a formula by Excel and
+ * LibreOffice ("-Mirpur road" comes out as #NAME?, and a crafted answer could
+ * do worse), so such text gets a leading apostrophe, the spreadsheets' own
+ * "this is text" mark. Numbers, negative ones included, are left alone.
+ */
 function csvCell(value: string | number | undefined): string {
-  const textValue = value == null ? '' : String(value)
+  let textValue = value == null ? '' : String(value)
+  if (typeof value === 'string' && /^[=+\-@\t\r]/.test(textValue) && !NUMERIC_TEXT.test(textValue)) {
+    textValue = `'${textValue}`
+  }
   return /[",\n\r]/.test(textValue) ? `"${textValue.replace(/"/g, '""')}"` : textValue
 }
 

@@ -4,9 +4,20 @@ import type {
   ChoicePrompt,
   ChoiceScenarioAnswer,
   Question,
+  RespondentDetails,
   TableAnswer,
   TableQuestion,
 } from './types'
+
+/** Bangla digits, as a Bangla keyboard types them, turned into ASCII ones. */
+export function asciiDigits(value: string): string {
+  return value.replace(/[০-৯]/g, (digit) => String('০১২৩৪৫৬৭৮৯'.indexOf(digit)))
+}
+
+/** What a number question accepts: an integer or a decimal, minus sign allowed, in either script. */
+export function isNumberText(value: string): boolean {
+  return /^-?\d+(\.\d+)?$/.test(asciiDigits(value.trim()))
+}
 
 export function isTableAnswer(value: unknown): value is TableAnswer {
   return typeof value === 'object' && value !== null && Array.isArray((value as TableAnswer).rows)
@@ -82,13 +93,24 @@ export function normalizeTableAnswer(
 
 export function isAnswered(question: Question, value: AnswerValue | undefined): boolean {
   if (value == null) return false
-  if (typeof value === 'string') return value.trim() !== ''
+  if (typeof value === 'string') {
+    // "abc" in a number field is not an answer; "১২০০" is.
+    return question.type === 'number' ? isNumberText(value) : value.trim() !== ''
+  }
   if (Array.isArray(value)) return value.length > 0
   if (question.type === 'choice_experiment') {
     if (!isChoiceExperimentAnswer(value) || value.scenarios.length === 0) return false
     const prompts = question.prompts.length > 0 ? question.prompts : [{ key: '' }]
     return value.scenarios.every((scenario) =>
-      prompts.every((prompt, index) => scenarioChoice(scenario, prompt, index) !== ''),
+      prompts.every((prompt, index) => {
+        const chosen = scenarioChoice(scenario, prompt, index)
+        if (chosen === '') return false
+        // "Other" is an answer only with the text that says what the other thing is.
+        if (chosen === OTHER_ANSWER && 'allowOther' in prompt && prompt.allowOther) {
+          return (scenario.other?.[prompt.key] ?? '').trim() !== ''
+        }
+        return true
+      }),
     )
   }
   if (question.type !== 'table') return false
@@ -98,4 +120,37 @@ export function isAnswered(question: Question, value: AnswerValue | undefined): 
       Object.values(row.cells).some((cell) => cell !== '' && cell !== false),
     )
   )
+}
+
+/**
+ * Whether the respondent has entered anything yet: what the fill page guards
+ * against losing on a tap on a header link, a back-swipe, or a reload. Cards
+ * drawn into a choice block are not input; a choice made on one is.
+ */
+export function hasAnyInput(
+  questions: Question[],
+  answers: Record<string, AnswerValue>,
+  respondent: Partial<RespondentDetails> = {},
+): boolean {
+  if (Object.values(respondent).some((detail) => (detail ?? '').trim() !== '')) return true
+  return questions.some((question) => {
+    const value = answers[question.id]
+    if (value == null) return false
+    if (typeof value === 'string') return value.trim() !== ''
+    if (Array.isArray(value)) return value.length > 0
+    if (isChoiceExperimentAnswer(value)) {
+      return value.scenarios.some(
+        (scenario) =>
+          scenario.choice !== '' ||
+          Object.values(scenario.choices ?? {}).some((chosen) => chosen !== '') ||
+          Object.values(scenario.other ?? {}).some((typed) => typed.trim() !== ''),
+      )
+    }
+    if (isTableAnswer(value)) {
+      return value.rows.some((row) =>
+        Object.values(row.cells).some((cell) => cell !== '' && cell !== false),
+      )
+    }
+    return false
+  })
 }

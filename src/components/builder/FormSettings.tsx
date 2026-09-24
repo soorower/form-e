@@ -42,19 +42,59 @@ function loadImage(src: string): Promise<HTMLImageElement> {
   })
 }
 
-/** Downscale large logos so the data URL stays small enough to store inline. */
+/**
+ * The stored data URL must stay small: it rides inside the survey document,
+ * so every list, every autosave and every tablet load carries it.
+ */
+const MAX_LOGO_DATA_URL = 160_000
+
+function drawScaled(
+  image: HTMLImageElement,
+  width: number,
+  height: number,
+  edge: number,
+  background?: string,
+): HTMLCanvasElement | null {
+  const scale = Math.min(1, edge / Math.max(width, height))
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.max(1, Math.round(width * scale))
+  canvas.height = Math.max(1, Math.round(height * scale))
+  const context = canvas.getContext('2d')
+  if (!context) return null
+  if (background) {
+    context.fillStyle = background
+    context.fillRect(0, 0, canvas.width, canvas.height)
+  }
+  context.drawImage(image, 0, 0, canvas.width, canvas.height)
+  return canvas
+}
+
+/**
+ * Downscales the logo so its data URL stays small enough to store inline.
+ * PNG keeps transparency; a photo-like image only gets small enough as a
+ * JPEG on white, so that is tried next, and the edge shrinks until one fits.
+ * Re-encoding every photo as a 480 px PNG used to give 300–450 KB logos.
+ * An SVG with no intrinsic size is given the full edge rather than 1×1.
+ */
 async function fileToLogo(file: File): Promise<string> {
   const original = await readAsDataUrl(file)
   const image = await loadImage(original)
-  const scale = Math.min(1, MAX_LOGO_EDGE / Math.max(image.width, image.height))
-  if (scale === 1 && file.size <= KEEP_ORIGINAL_UNDER_BYTES) return original
-  const canvas = document.createElement('canvas')
-  canvas.width = Math.max(1, Math.round(image.width * scale))
-  canvas.height = Math.max(1, Math.round(image.height * scale))
-  const context = canvas.getContext('2d')
-  if (!context) return original
-  context.drawImage(image, 0, 0, canvas.width, canvas.height)
-  return canvas.toDataURL('image/png')
+  const width = image.naturalWidth || image.width || MAX_LOGO_EDGE
+  const height = image.naturalHeight || image.height || MAX_LOGO_EDGE
+  if (Math.max(width, height) <= MAX_LOGO_EDGE && original.length <= KEEP_ORIGINAL_UNDER_BYTES) {
+    return original
+  }
+  for (let edge = MAX_LOGO_EDGE; edge >= 120; edge = Math.round(edge * 0.7)) {
+    const canvas = drawScaled(image, width, height, edge)
+    if (!canvas) break
+    const png = canvas.toDataURL('image/png')
+    if (png.length <= MAX_LOGO_DATA_URL) return png
+    const jpeg = drawScaled(image, width, height, edge, '#ffffff')?.toDataURL('image/jpeg', 0.85)
+    if (jpeg && jpeg.length <= MAX_LOGO_DATA_URL) return jpeg
+  }
+  throw new Error(
+    'This image is too detailed to store as a logo. Use a simpler one, such as the logo alone on a plain background.',
+  )
 }
 
 export function FormSettings({ questionnaire, onChange }: FormSettingsProps) {

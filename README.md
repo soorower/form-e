@@ -1,193 +1,54 @@
-Welcome to your new TanStack Start app! 
+# Form-E
 
-# Getting Started
+A form builder and tablet survey app for **transportation mode-choice** research: creators design bilingual (English / Bangla) questionnaires — including stated-preference choice experiments built from design cards — enumerators fill them in on tablets in the field, and the responses come back as Excel, CSV or JSON.
 
-To run this application:
+Live: <https://forme-survey.vercel.app>
+
+## Stack
+
+- [TanStack Start](https://tanstack.com/start) (React 19, file-based routes, SSR through Nitro) with shadcn/ui and Tailwind CSS v4
+- [Convex](https://convex.dev) for the database and server functions, [Convex Auth](https://labs.convex.dev/auth) for sign-in (Google, or email + password)
+- Vitest for tests, Vercel for hosting
+
+## Running it locally
 
 ```bash
 npm install
-npm run dev
+npx convex dev        # first run: creates a Convex project and writes .env.local
+npm run dev           # http://localhost:3000
 ```
 
-# Building For Production
+`npx convex dev` keeps running and pushes `convex/` whenever it changes; `npx convex dev --once` pushes and exits. `.env.local` holds `CONVEX_DEPLOYMENT`, `CONVEX_URL` and `VITE_CONVEX_URL` (the one the browser sees).
 
-To build this application for production:
+### Deployment variables
+
+Set these on the Convex deployment (`npx convex env set NAME value`, or the dashboard):
+
+| Variable | What it is |
+| --- | --- |
+| `JWT_PRIVATE_KEY`, `JWKS` | Convex Auth's signing keys. `npx @convex-dev/auth` generates them. |
+| `SITE_URL` | Where a Google sign-in lands afterwards, e.g. `http://localhost:3000`. |
+| `EXTRA_SITE_URLS` | Comma-separated further origins that may finish a sign-in, e.g. the hosted site. |
+| `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET` | A Google OAuth client whose redirect URI is `https://<deployment>.convex.site/api/auth/callback/google`. |
+| `ADMIN_EMAILS` | Comma-separated addresses that count as admins once they sign in **with Google** (the bootstrap; further admins are promoted from the panel). |
+
+Email + password sign-in needs nothing more, but it sends no verification mail: such an account waits until an admin approves it on `/admin`.
+
+## Roles
+
+- **Admin** (`/admin`, a separate sign-in from the app): approves accounts, makes groups, hands surveys to builders and groups, assigns surveyors, and can build surveys too.
+- **Builder**: creates and edits surveys, previews them, downloads responses, follows the team dashboard and chat.
+- **Surveyor**: fills the surveys assigned to them, one question at a time, and sees the team's progress and chat.
+
+The respondent-facing form (`/surveys/<id>/fill`) needs no sign-in, so a shared tablet works; a signed-in surveyor is recorded under their own name.
+
+## Commands
 
 ```bash
-npm run build
+npm run dev       # dev server on port 3000
+npm run test      # Vitest
+npm run build     # production build
+vercel --prod     # deploy the working directory (VITE_CONVEX_URL is set on the Vercel project)
 ```
 
-## Testing
-
-This project uses [Vitest](https://vitest.dev/) for testing. You can run the tests with:
-
-```bash
-npm run test
-```
-
-## Styling
-
-This project uses [Tailwind CSS](https://tailwindcss.com/) for styling.
-
-### Removing Tailwind CSS
-
-If you prefer not to use Tailwind CSS:
-
-1. Remove the demo pages in `src/routes/demo/`
-2. Replace the Tailwind import in `src/styles.css` with your own styles
-3. Remove `tailwindcss()` from the plugins array in `vite.config.ts`
-4. Uninstall the packages: `npm install @tailwindcss/vite tailwindcss -D`
-
-
-
-## Routing
-
-This project uses [TanStack Router](https://tanstack.com/router) with file-based routing. Routes are managed as files in `src/routes`.
-
-### Adding A Route
-
-To add a new route to your application just add a new file in the `./src/routes` directory.
-
-TanStack will automatically generate the content of the route file for you.
-
-Now that you have two routes you can use a `Link` component to navigate between them.
-
-### Adding Links
-
-To use SPA (Single Page Application) navigation you will need to import the `Link` component from `@tanstack/react-router`.
-
-```tsx
-import { Link } from "@tanstack/react-router";
-```
-
-Then anywhere in your JSX you can use it like so:
-
-```tsx
-<Link to="/about">About</Link>
-```
-
-This will create a link that will navigate to the `/about` route.
-
-More information on the `Link` component can be found in the [Link documentation](https://tanstack.com/router/v1/docs/framework/react/api/router/linkComponent).
-
-### Using A Layout
-
-In the File Based Routing setup the layout is located in `src/routes/__root.tsx`. Anything you add to the root route will appear in all the routes. The route content will appear in the JSX where you render `{children}` in the `shellComponent`.
-
-Here is an example layout that includes a header:
-
-```tsx
-import { HeadContent, Scripts, createRootRoute } from '@tanstack/react-router'
-
-export const Route = createRootRoute({
-  head: () => ({
-    meta: [
-      { charSet: 'utf-8' },
-      { name: 'viewport', content: 'width=device-width, initial-scale=1' },
-      { title: 'My App' },
-    ],
-  }),
-  shellComponent: ({ children }) => (
-    <html lang="en">
-      <head>
-        <HeadContent />
-      </head>
-      <body>
-        <header>
-          <nav>
-            <Link to="/">Home</Link>
-            <Link to="/about">About</Link>
-          </nav>
-        </header>
-        {children}
-        <Scripts />
-      </body>
-    </html>
-  ),
-})
-```
-
-More information on layouts can be found in the [Layouts documentation](https://tanstack.com/router/latest/docs/framework/react/guide/routing-concepts#layouts).
-
-## Server Functions
-
-TanStack Start provides server functions that allow you to write server-side code that seamlessly integrates with your client components.
-
-```tsx
-import { createServerFn } from '@tanstack/react-start'
-
-const getServerTime = createServerFn({
-  method: 'GET',
-}).handler(async () => {
-  return new Date().toISOString()
-})
-
-// Use in a component
-function MyComponent() {
-  const [time, setTime] = useState('')
-  
-  useEffect(() => {
-    getServerTime().then(setTime)
-  }, [])
-  
-  return <div>Server time: {time}</div>
-}
-```
-
-## API Routes
-
-You can create API routes by using the `server` property in your route definitions:
-
-```tsx
-import { createFileRoute } from '@tanstack/react-router'
-import { json } from '@tanstack/react-start'
-
-export const Route = createFileRoute('/api/hello')({
-  server: {
-    handlers: {
-      GET: () => json({ message: 'Hello, World!' }),
-    },
-  },
-})
-```
-
-## Data Fetching
-
-There are multiple ways to fetch data in your application. You can use TanStack Query to fetch data from a server. But you can also use the `loader` functionality built into TanStack Router to load the data for a route before it's rendered.
-
-For example:
-
-```tsx
-import { createFileRoute } from '@tanstack/react-router'
-
-export const Route = createFileRoute('/people')({
-  loader: async () => {
-    const response = await fetch('https://swapi.dev/api/people')
-    return response.json()
-  },
-  component: PeopleComponent,
-})
-
-function PeopleComponent() {
-  const data = Route.useLoaderData()
-  return (
-    <ul>
-      {data.results.map((person) => (
-        <li key={person.name}>{person.name}</li>
-      ))}
-    </ul>
-  )
-}
-```
-
-Loaders simplify your data fetching logic dramatically. Check out more information in the [Loader documentation](https://tanstack.com/router/latest/docs/framework/react/guide/data-loading#loader-parameters).
-
-# Demo files
-
-Files prefixed with `demo` can be safely deleted. They are there to provide a starting point for you to play around with the features you've installed.
-
-# Learn More
-
-You can learn more about all of the offerings from TanStack in the [TanStack documentation](https://tanstack.com).
-
-For TanStack Start specific documentation, visit [TanStack Start](https://tanstack.com/start).
+`CLAUDE.md` describes the code in detail: the card-table conventions for choice experiments, how cards are balanced across tablets, the outbox that keeps a response on the tablet until the server has it, the export layout, and the access rules.

@@ -56,7 +56,9 @@ export function parseDelimited(input: string): string[][] {
       }
       continue
     }
-    if (char === '"') {
+    if (char === '"' && cell === '') {
+      // Only at the start of a cell, as CSV readers do: a quote inside one
+      // (5" screen) is a character. It used to swallow the rest of the paste.
       quoted = true
     } else if (char === delimiter) {
       row.push(cell)

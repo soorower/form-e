@@ -44,7 +44,10 @@ export function RequireAuth({ admin = false, builder = false, children }: Requir
     void navigate({ to: paths.login, search: { redirect: location.href }, replace: true })
   }, [loading, isAuthenticated, navigate, location.href, paths.login])
 
-  if (loading || !isAuthenticated || !viewer) return <GatePlaceholder />
+  if (loading || !isAuthenticated) return <GatePlaceholder />
+  // A valid session whose account row is gone (deleted from the dashboard):
+  // the spinner used to stay for as long as the token lasted.
+  if (!viewer) return <MissingAccount />
   if (needAdmin && viewer.role !== 'admin') return <AdminsOnly viewer={viewer} />
   if (!viewer.approved) return <AwaitingApproval viewer={viewer} />
   if (builder && !viewer.canBuild) return <BuildersOnly />
@@ -145,6 +148,21 @@ function AwaitingApproval({ viewer }: { viewer: Viewer }) {
         </Button>
         <SignOutButton label="Use another account" />
       </div>
+    </GateCard>
+  )
+}
+
+/** Signed in, but there is no account behind the session any more. */
+function MissingAccount() {
+  return (
+    <GateCard
+      icon={<ShieldAlert className="size-6" aria-hidden="true" />}
+      tone="red"
+      title="Account not found"
+      description="You are signed in, but the account no longer exists. It may have been removed by the admin."
+    >
+      <p>Sign out and sign in again, or ask the Form-E admin to check the account.</p>
+      <SignOutButton label="Sign out" />
     </GateCard>
   )
 }

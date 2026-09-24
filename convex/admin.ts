@@ -6,12 +6,14 @@ import {
   accountStatus,
   bootstrapAdmins,
   displayName,
+  emailVerified,
   groupByAppId,
   isAdminUser,
   normalizeEmail,
   questionnaireByAppId,
   requireAdmin,
   roleOf,
+  trustedEmail,
   viewerAccess,
 } from './access'
 import { role, userStatus } from './validators'
@@ -140,7 +142,9 @@ export const overview = query({
         .sort((a, b) => a.name.localeCompare(b.name)),
       users: users
         .map((user) => {
-          const email = user.email ? normalizeEmail(user.email) : ''
+          // Groups and assignments reach an account only through a trusted
+          // address (see access.ts), so the panel shows what applies.
+          const email = trustedEmail(user)
           const groupIds = email ? (groupsByEmail.get(email) ?? []) : []
           const admin = isAdminUser(user)
           return {
@@ -148,6 +152,8 @@ export const overview = query({
             name: user.name ?? null,
             email: user.email ?? null,
             image: user.image ?? null,
+            // False for a password sign-up: nothing proved it owns the address.
+            emailVerified: emailVerified(user),
             role: roleOf(user),
             code: user.surveyorCode ?? null,
             assignedCount: email

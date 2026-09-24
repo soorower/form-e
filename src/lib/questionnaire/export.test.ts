@@ -3,8 +3,10 @@ import { parseCardTable, EXAMPLE_CARD_TABLE, EXAMPLE_TWO_ROW_CARD_TABLE } from '
 import {
   countByEnumerator,
   exportColumns,
+  earlierCardsColumn,
   exportFileName,
   filterByEnumerator,
+  localIso,
   responsesToRows,
   toCsv,
 } from './export'
@@ -69,7 +71,9 @@ describe('responsesToRows', () => {
       'Response ID': 'r1',
       'Survey no.': 'ACBUS-007',
       Enumerator: 'Nawal',
-      'Submitted at': '2026-09-10T12:00:00.000Z',
+      'Surveyor code': '',
+      'Submitted at': localIso(response.submittedAt),
+      'Received at': '',
       Language: 'bn',
       '1. Gender': '1) Male',
       '2. One-way cost': '1500',
@@ -216,17 +220,19 @@ describe('exportColumns and toCsv', () => {
     const questionnaire = buildQuestionnaire()
     const rows = responsesToRows(questionnaire, [response])
     const columns = exportColumns(questionnaire, rows)
-    expect(columns.slice(0, 8)).toEqual([
+    expect(columns.slice(0, 10)).toEqual([
       'Response ID',
       'Survey no.',
       'Enumerator',
+      'Surveyor code',
       'Submitted at',
+      'Received at',
       'Language',
       '1. Gender',
       '2. One-way cost',
       '5. Willingness to pay',
     ])
-    expect(columns.slice(8, 12)).toEqual(['Block', 'Question', 'Scenario', 'Set'])
+    expect(columns.slice(10, 14)).toEqual(['Block', 'Question', 'Scenario', 'Set'])
     expect(columns.at(-1)).toBe('Choice')
     expect(columns).toContain('Reliability_B')
   })
@@ -394,10 +400,11 @@ describe('respondent details', () => {
   it('puts the details asked for right after the enumerator', () => {
     const questionnaire = withDetails()
     const rows = responsesToRows(questionnaire, [withRespondent])
-    expect(exportColumns(questionnaire, rows).slice(0, 5)).toEqual([
+    expect(exportColumns(questionnaire, rows).slice(0, 6)).toEqual([
       'Response ID',
       'Survey no.',
       'Enumerator',
+      'Surveyor code',
       'Respondent name',
       'Respondent phone',
     ])
@@ -446,5 +453,70 @@ describe('scenario plan in the export', () => {
     const questionnaire = buildQuestionnaire()
     const rows = responsesToRows(questionnaire, [response])
     expect(exportColumns(questionnaire, rows)).not.toContain('Plan row')
+  })
+})
+
+describe('when it was collected, and by whom', () => {
+  it('writes local time with the offset, for the tablet time and the server time alike', () => {
+    const at = Date.UTC(2026, 8, 24, 3, 15, 0)
+    const stamp = localIso(at)
+    expect(stamp).toMatch(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d[+-]\d\d:\d\d$/)
+    expect(new Date(stamp).getTime()).toBe(at)
+
+    const sixHours = 6 * 3_600_000
+    const [row] = responsesToRows(buildQuestionnaire(), [
+      { ...response, receivedAt: response.submittedAt + sixHours, surveyorCode: 'S03' },
+    ])
+    expect(row['Submitted at']).toBe(localIso(response.submittedAt))
+    expect(row['Received at']).toBe(localIso(response.submittedAt + sixHours))
+    expect(row['Surveyor code']).toBe('S03')
+  })
+})
+
+describe('after the cards were re-imported under other column names', () => {
+  it('keeps the levels an earlier response saw, under their own names, with the levels', () => {
+    const questionnaire = buildQuestionnaire()
+    const earlier: SurveyResponse = {
+      ...response,
+      id: 'r0',
+      answers: {
+        ...response.answers,
+        block: {
+          scenarios: [
+            {
+              set: 9,
+              levels: { Travel_Time_Bus: '5 Hours', Travel_Cost_Bus: '1800 Taka' },
+              choice: 'A',
+            },
+          ],
+        },
+      },
+    }
+    const rows = responsesToRows(questionnaire, [earlier, response])
+    const columns = exportColumns(questionnaire, rows)
+    const kept = earlierCardsColumn('Travel_Time_Bus')
+    expect(rows[0][kept]).toBe('5 Hours')
+    expect(rows[0].Time_A).toBe('')
+    expect(columns.indexOf(kept)).toBeGreaterThan(columns.indexOf('Set'))
+    expect(columns.indexOf(kept)).toBeLessThan(columns.indexOf('Choice'))
+    // Rows from the current design carry no such column.
+    expect(rows[1][kept]).toBeUndefined()
+  })
+})
+
+describe('CSV cells a spreadsheet would run as formulas', () => {
+  it('marks text starting with =, +, - or @ as text, and leaves numbers alone', () => {
+    const csv = toCsv(
+      ['a'],
+      [{ a: '=1+1' }, { a: '-Mirpur road' }, { a: '@home' }, { a: '-5' }, { a: '+8801712345678' }, { a: 12 }],
+    )
+    expect(csv.slice(1).split('\r\n').slice(1, 7)).toEqual([
+      "'=1+1",
+      "'-Mirpur road",
+      "'@home",
+      '-5',
+      '+8801712345678',
+      '12',
+    ])
   })
 })

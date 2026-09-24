@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { getFunctionName, type FunctionReference } from 'convex/server'
+import { ConvexError } from 'convex/values'
 import type { ReactNode } from 'react'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { encodeQuestionnaire } from '#/lib/convex/questionnaire-codec'
@@ -15,6 +16,8 @@ const mocks = vi.hoisted(() => ({
   abandon: vi.fn(),
   stored: null as unknown,
   exposure: { cards: [] as unknown[], planRows: [] as unknown[] },
+  // Every args value the page subscribed to cardExposure with ('skip' included).
+  exposureArgs: [] as unknown[],
   viewer: { viewer: null, isSurveyor: false, canBuild: false } as {
     viewer: unknown
     isSurveyor: boolean
@@ -34,7 +37,10 @@ vi.mock('convex/react', () => ({
     const name = getFunctionName(reference)
     if (name === 'questionnaires:get') return mocks.stored
     if (name === 'responses:nextSerial') return 5
-    if (name === 'responses:cardExposure') return mocks.exposure
+    if (name === 'responses:cardExposure') {
+      mocks.exposureArgs.push(args)
+      return mocks.exposure
+    }
     return []
   },
 }))
@@ -50,6 +56,8 @@ vi.mock('@tanstack/react-router', () => ({
   Link: ({ children, to }: { children?: ReactNode; to?: string; params?: unknown }) => (
     <a href={to}>{children}</a>
   ),
+  // The navigation guard needs a router; here there is none to block.
+  useBlocker: () => undefined,
 }))
 
 function setOnline(online: boolean) {
@@ -100,6 +108,9 @@ describe('FillPage saving', () => {
     const [sent] = mocks.submit.mock.calls[0]
     expect(sent).toMatchObject({ questionnaireId: 'survey-1', language: 'en' })
     expect(Object.values(sent.answers)).toEqual(['Teacher'])
+    // When Submit was pressed, so an offline interview is not dated by the sync.
+    expect(typeof sent.collectedAt).toBe('number')
+    expect(sent.collectedAt).toBeLessThanOrEqual(Date.now())
   })
 
   it('keeps the interview on the device with no connection, and delivers it later', async () => {
@@ -120,19 +131,29 @@ describe('FillPage saving', () => {
     expect(mocks.submit).toHaveBeenCalledTimes(1)
   })
 
-  it('keeps a refused response and sends it again on the next visit, under the same id', async () => {
-    mocks.submit.mockRejectedValue(new Error('Server Error'))
+  it('keeps a refused response with the reason, out of the automatic retries, until "Try again"', async () => {
+    mocks.submit.mockRejectedValue(new ConvexError('This survey no longer exists.'))
     const first = render(<FillPage surveyId="survey-1" />)
 
     await fillAndSubmit()
-    expect((await screen.findByRole('alert')).textContent).toMatch(/could not be saved/)
+    const alerts = await screen.findAllByRole('alert')
+    const said = alerts.map((alert) => alert.textContent).join(' ')
+    // The reason, not "check the connection": the server turned it down.
+    expect(said).toMatch(/did not accept this response: This survey no longer exists/)
     const [kept] = readOutbox()
+    expect(kept.refused).toBe('This survey no longer exists.')
     expect(kept.answers).toEqual(mocks.submit.mock.calls[0][0].answers)
     first.unmount()
 
+    // The next visit leaves it alone: the same copy would only be refused again.
     mocks.submit.mockReset()
     mocks.submit.mockResolvedValue({ serial: 9, surveyNumber: 'T-009' })
     render(<FillPage surveyId="survey-1" />)
+    await screen.findByText(/did not accept 1 response kept on this device/)
+    expect(mocks.submit).not.toHaveBeenCalled()
+    expect(screen.queryByText(/kept on this device and is not on the server yet/)).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
     await waitFor(() => expect(readOutbox()).toEqual([]))
     expect(mocks.submit).toHaveBeenCalledTimes(1)
     expect(mocks.submit.mock.calls[0][0].id).toBe(kept.id)
@@ -155,6 +176,7 @@ describe('FillPage balanced cards', () => {
     mocks.abandon.mockReset()
     mocks.abandon.mockResolvedValue(undefined)
     mocks.exposure = { cards: [], planRows: [] }
+    mocks.exposureArgs = []
     setOnline(true)
     const block = {
       ...createQuestion('choice_experiment'),
@@ -187,6 +209,9 @@ describe('FillPage balanced cards', () => {
     expect(screen.getByText('2 Hours')).toBeTruthy()
     expect(screen.queryByText('1 Hours')).toBeNull()
     expect(screen.queryByText('3 Hours')).toBeNull()
+    // The server chose, so the tablet never subscribed to the usage counts:
+    // that subscription re-read every response of the survey on every submit.
+    expect(mocks.exposureArgs.every((args) => args === 'skip')).toBe(true)
 
     for (const option of screen.getAllByRole('radio')) fireEvent.click(option)
     fireEvent.click(screen.getByRole('button', { name: 'Submit' }))
@@ -248,6 +273,8 @@ describe('FillPage balanced cards', () => {
     expect(screen.getByText('4 Hours')).toBeTruthy()
     expect(screen.queryByText('1 Hours')).toBeNull()
     expect(screen.queryByText('2 Hours')).toBeNull()
+    // Only once the server gave no answer were the counts asked for.
+    expect(mocks.exposureArgs.some((args) => args !== 'skip')).toBe(true)
   })
 })
 

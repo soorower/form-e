@@ -51,6 +51,9 @@ function legacyPrompts(question: Record<string, unknown>, layout: ChoiceLayout):
   return [
     {
       ...prompt,
+      // The same key on every read. A fresh random one remounted the prompt
+      // on each render and filed answers under a key no other load knew.
+      key: `${String(question.id)}-prompt-1`,
       text: wording ?? prompt.text,
       options: options && options.length > 0 ? options : defaultChoiceOptions(),
     },

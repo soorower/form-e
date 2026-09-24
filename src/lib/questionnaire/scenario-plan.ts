@@ -24,10 +24,20 @@ import type { ChoiceCard, ChoiceExperimentQuestion, ChoiceScenarioAnswer, Scenar
 const ROW_COLUMN =
   /^(set|sets|row|rows|respondent|respondents|serial|sl\.?|no\.?|number|id|group|block|version|কার্ড|সেট|নং)$/i
 
-/** A positive whole number, in Western or Bangla digits. */
-const isCount = (value: string) => /^[1-9]\d*$/.test(fromBanglaDigits(value))
+/**
+ * "50", "৫০", and also "50.0" and "1,014" as Excel formats them, as a plain
+ * digit string; anything else stays as it is and is then not a count.
+ */
+function normaliseCount(value: string): string {
+  return fromBanglaDigits(value.trim())
+    .replace(/^(\d{1,3}(?:,\d{3})+)(\.0+)?$/, (_match, grouped: string) => grouped.replace(/,/g, ''))
+    .replace(/^(\d+)\.0+$/, '$1')
+}
 
-const toCount = (value: string) => Number(fromBanglaDigits(value))
+/** A positive whole number, in Western or Bangla digits. */
+const isCount = (value: string) => /^[1-9]\d*$/.test(normaliseCount(value))
+
+const toCount = (value: string) => Number(normaliseCount(value))
 
 export interface ParsedScenarioPlan {
   rows: ScenarioPlanRow[]
@@ -54,7 +64,11 @@ export function parseScenarioPlan(input: string): ParsedScenarioPlan {
   const table = parseDelimited(input)
   if (table.length === 0) throw new Error('There is nothing to read. Paste the scenario sheet first.')
 
-  const hadHeader = !table[0].some(isCount)
+  // A plan row starts with a count (its number or its first card); a header
+  // starts with a word. Judging the whole row let "Set | 1 | 2 | 3" pass as
+  // a plan row, which then read every real row's number as a card.
+  const firstFilled = table[0].find((cell) => cell !== '') ?? ''
+  const hadHeader = !isCount(firstFilled)
   const body = hadHeader ? table.slice(1) : table
   if (body.length === 0) {
     throw new Error('The sheet has a header but no rows of card numbers under it.')
@@ -73,15 +87,28 @@ export function parseScenarioPlan(input: string): ParsedScenarioPlan {
 
   const rows: ScenarioPlanRow[] = []
   const skippedRows: number[] = []
+  const odd: { row: number; value: string }[] = []
   body.forEach((cells, index) => {
+    const sheetRow = index + (hadHeader ? 2 : 1)
     const label = hadRowColumn ? (cells[0] ?? '') : ''
-    const sets = (hadRowColumn ? cells.slice(1) : cells).filter(isCount).map(toCount)
+    const values = hadRowColumn ? cells.slice(1) : cells
+    // A cell that is filled but no card number (#N/A from a broken lookup,
+    // a typo) used to be dropped in silence, shortening the row.
+    for (const value of values) if (value !== '' && !isCount(value)) odd.push({ row: sheetRow, value })
+    const sets = values.filter(isCount).map(toCount)
     if (sets.length === 0) {
-      skippedRows.push(index + (hadHeader ? 2 : 1))
+      if (values.every((value) => value === '')) skippedRows.push(sheetRow)
       return
     }
     rows.push({ row: isCount(label) ? toCount(label) : rows.length + 1, sets })
   })
+
+  if (odd.length > 0) {
+    const [first] = odd
+    throw new Error(
+      `Row ${first.row} holds "${first.value}" where a card number should be${odd.length > 1 ? ` (${odd.length} such cells)` : ''}. Fix the sheet (a #N/A is a broken lookup) and paste it again.`,
+    )
+  }
 
   if (rows.length === 0) {
     throw new Error(
@@ -148,10 +175,10 @@ export function splitScenarioPlan(
 
   for (const block of blocks) {
     const take = Math.max(1, block.scenariosPerRespondent)
-    byBlock.set(
-      block.id,
-      rows.map((row) => ({ row: row.row, sets: row.sets.slice(offset, offset + take) })),
-    )
+    const slice = rows.map((row) => ({ row: row.row, sets: row.sets.slice(offset, offset + take) }))
+    // A block the sheet does not reach gets no plan at all, not a plan of
+    // empty rows that reads as planned and then shows nothing.
+    byBlock.set(block.id, slice.every((row) => row.sets.length === 0) ? [] : slice)
     spans.push({ id: block.id, from: offset + 1, to: offset + take })
     offset += take
   }

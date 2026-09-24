@@ -1,4 +1,4 @@
-import { v } from 'convex/values'
+import { ConvexError, v, type Infer } from 'convex/values'
 import { mutation, query, type MutationCtx, type QueryCtx } from './_generated/server'
 import {
   CARD_RESERVATION_MS,
@@ -26,6 +26,24 @@ import { lang, respondentDetails } from './validators'
 // Submitting, the next serial, drawing cards, and card exposure stay public:
 // they serve the tablet fill page, where enumerators need not sign in; a
 // signed-in surveyor is stamped onto the response by the server.
+
+const MAX_NAME_LENGTH = 120
+const MAX_DETAIL_LENGTH = 500
+/** Far above any real interview: three blocks of nine scenarios is about 10 KB. */
+const MAX_ANSWERS_BYTES = 256 * 1024
+
+type RespondentDetails = Infer<typeof respondentDetails>
+
+/** The respondent's details as stored: trimmed, capped, filled-in ones only. */
+function cleanDetails(details: RespondentDetails | undefined): RespondentDetails | undefined {
+  if (!details) return undefined
+  const cleaned: RespondentDetails = {}
+  for (const key of ['name', 'email', 'phone', 'address'] as const) {
+    const value = details[key]?.trim().slice(0, MAX_DETAIL_LENGTH)
+    if (value) cleaned[key] = value
+  }
+  return Object.keys(cleaned).length > 0 ? cleaned : undefined
+}
 
 /** "ACBUS-" + 7 -> "ACBUS-007". Mirrors formatSurveyNumber in the client. */
 function formatSurveyNumber(prefix: string, serial: number): string {
@@ -187,6 +205,9 @@ export const submit = mutation({
     language: lang,
     respondent: v.optional(respondentDetails),
     answers: v.any(),
+    // When Submit was pressed on the tablet. Without it an interview kept on
+    // an offline tablet was dated by the sync, hours or a day later.
+    collectedAt: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const duplicate = await ctx.db
@@ -201,8 +222,19 @@ export const submit = mutation({
       .query('questionnaires')
       .withIndex('by_app_id', (q) => q.eq('id', args.questionnaireId))
       .unique()
+    // Public, so the payload is checked here: a response to a deleted survey
+    // has nowhere to go, and junk must not be able to fill the table.
+    if (!questionnaire) throw new ConvexError('This survey no longer exists.')
+    const { respondent, answers, collectedAt, ...rest } = args
+    if (typeof answers !== 'object' || answers === null || Array.isArray(answers)) {
+      throw new ConvexError('The answers are not in the shape the app sends.')
+    }
+    if (JSON.stringify(answers).length > MAX_ANSWERS_BYTES) {
+      throw new ConvexError('The answers are too large to store.')
+    }
+    const now = Date.now()
     const serial = (await highestSerial(ctx, args.questionnaireId)) + 1
-    const surveyNumber = formatSurveyNumber(questionnaire?.surveyCodePrefix ?? '', serial)
+    const surveyNumber = formatSurveyNumber(questionnaire.surveyCodePrefix, serial)
 
     // A signed-in, approved account is stamped onto the response. A
     // surveyor's responses always carry their own name, whatever the tablet
@@ -210,11 +242,16 @@ export const submit = mutation({
     const access = await viewerAccess(ctx)
     const signedIn = access && isApproved(access) ? access : null
     const enumerator =
-      signedIn?.role === 'surveyor' ? displayName(signedIn.user) : args.enumerator
+      signedIn?.role === 'surveyor'
+        ? displayName(signedIn.user)
+        : args.enumerator.trim().slice(0, MAX_NAME_LENGTH)
+    const details = cleanDetails(respondent)
 
     await ctx.db.insert('responses', {
-      ...args,
+      ...rest,
+      answers,
       enumerator,
+      ...(details ? { respondent: details } : {}),
       ...(signedIn
         ? {
             surveyorId: signedIn.user._id,
@@ -223,7 +260,9 @@ export const submit = mutation({
         : {}),
       serial,
       surveyNumber,
-      submittedAt: Date.now(),
+      // The tablet's time when it sent one, never in the future of the server's.
+      submittedAt: collectedAt === undefined ? now : Math.min(collectedAt, now),
+      receivedAt: now,
     })
     return { serial, surveyNumber }
   },

@@ -370,7 +370,10 @@ export interface SurveyResponse {
    */
   respondent?: RespondentDetails
   answers: Record<string, AnswerValue>
+  /** When Submit was pressed on the tablet (its clock), never after `receivedAt`. */
   submittedAt: number
+  /** When the server recorded it; absent on responses stored before this existed. */
+  receivedAt?: number
 }
 
 /** What the team sees of a response: who collected it and when, never the answers. */

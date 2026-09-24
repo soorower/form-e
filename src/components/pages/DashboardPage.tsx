@@ -57,6 +57,7 @@ export function DashboardPage({ teamParam }: { teamParam?: string }) {
     | ResponseProgress[]
     | undefined
   const save = useMutation(api.questionnaires.save)
+  const setTeam = useMutation(api.questionnaires.setTeam)
   const [selectedId, setSelectedId] = useState<string | null>(teamParam ?? null)
   const [editing, setEditing] = useState(false)
   const [creating, setCreating] = useState(false)
@@ -107,7 +108,14 @@ export function DashboardPage({ teamParam }: { teamParam?: string }) {
 
   function updateTeam(patch: Partial<Questionnaire>) {
     if (!selected) return
-    void save(encodeQuestionnaire({ ...selected.questionnaire, ...patch }) as never)
+    // Only the team fields: sending the whole survey from this page's own
+    // subscription overwrote whatever the builder had saved in the meantime.
+    void setTeam({
+      id: selected.questionnaire.id,
+      ...(patch.teamName !== undefined ? { teamName: patch.teamName } : {}),
+      ...(patch.responseTarget !== undefined ? { responseTarget: patch.responseTarget } : {}),
+      ...(patch.enumerators !== undefined ? { enumerators: patch.enumerators } : {}),
+    })
   }
 
   function createTeam(event: FormEvent) {

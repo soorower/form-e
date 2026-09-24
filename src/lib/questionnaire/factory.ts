@@ -248,3 +248,16 @@ export function createQuestionnaire(): Questionnaire {
     updatedAt: now,
   }
 }
+
+/** Whether deleting this question would throw away anything typed or imported into it. */
+export function questionHasContent(question: Question): boolean {
+  const hasText = (value: LocalizedText | undefined) =>
+    !!value && (value.en.trim() !== '' || value.bn.trim() !== '')
+  if (hasText(question.label) || hasText(question.help)) return true
+  if ('options' in question && question.options.some((option) => hasText(option.label))) return true
+  if (question.type === 'table') return question.rows.length > 0 || question.columns.length > 0
+  if (question.type === 'choice_experiment') {
+    return question.cards.length > 0 || (question.scenarioPlan?.length ?? 0) > 0
+  }
+  return false
+}

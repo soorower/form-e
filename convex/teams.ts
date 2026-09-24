@@ -1,11 +1,12 @@
 import { ConvexError, v } from 'convex/values'
 import { mutation, query } from './_generated/server'
 import {
-  accountStatus,
+  accessFor,
   assertAccess,
   canBuild,
   canView,
   displayName,
+  isApproved,
   normalizeEmail,
   questionnaireByAppId,
   requireApproved,
@@ -28,18 +29,12 @@ export const surveyors = query({
     const rows = []
     for (const user of users) {
       if (roleOf(user) !== 'surveyor' || !user.email) continue
-      const email = normalizeEmail(user.email)
-      if (user.status !== 'approved') {
-        // Added to a group by email counts as approval too.
-        const memberships = await ctx.db
-          .query('groupMembers')
-          .withIndex('by_email', (q) => q.eq('email', email))
-          .collect()
-        if (accountStatus(user, memberships.length) !== 'approved') continue
-      }
+      // The same rule as signing in: approved by the admin, or added to a
+      // group under an address the account has proved.
+      if (!isApproved(await accessFor(ctx, user))) continue
       rows.push({
         id: user._id,
-        email,
+        email: normalizeEmail(user.email),
         name: displayName(user),
         code: user.surveyorCode ?? null,
       })

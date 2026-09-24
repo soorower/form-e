@@ -20,11 +20,22 @@ const HEADER_FILL: ExcelJSTypes.Fill = {
   fgColor: { argb: 'FFE8ECF7' },
 }
 
-/** Numeric answers become numbers so Excel can sum and filter them; ids stay text. */
-function cellValue(column: string, value: string | number | undefined): string | number | null {
+/**
+ * Beyond 15 digits neither a JS number nor an Excel cell holds a value
+ * exactly: a 17-digit NID typed into a text question came back altered.
+ */
+const MAX_EXACT_DIGITS = 15
+
+/** Numeric answers become numbers so Excel can sum and filter them; ids and long digit strings stay text. */
+export function cellValue(column: string, value: string | number | undefined): string | number | null {
   if (value == null || value === '') return null
   if (typeof value === 'number') return value
-  if (column !== 'Response ID' && column !== 'Survey no.' && NUMERIC.test(value)) {
+  if (
+    column !== 'Response ID' &&
+    column !== 'Survey no.' &&
+    NUMERIC.test(value) &&
+    value.replace(/\D/g, '').length <= MAX_EXACT_DIGITS
+  ) {
     return Number(value)
   }
   return value

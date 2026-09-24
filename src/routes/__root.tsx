@@ -7,7 +7,7 @@ import {
 } from '@tanstack/react-router'
 import type { QueryClient } from '@tanstack/react-query'
 import { ConvexAuthProvider } from '@convex-dev/auth/react'
-import { convex } from '../lib/convex/client'
+import { convex, isConvexConfigured } from '../lib/convex/client'
 import { isAdminPath } from '../lib/auth/areas'
 import Footer from '../components/Footer'
 import Header from '../components/Header'
@@ -54,6 +54,16 @@ function RootLayout() {
   if (adminArea) return <Outlet />
   return (
     <>
+      {/* Without the deployment URL every page just loads for ever; say why. */}
+      {!isConvexConfigured() && (
+        <p
+          role="alert"
+          className="bg-destructive px-4 py-2 text-center text-sm font-medium text-destructive-foreground"
+        >
+          VITE_CONVEX_URL is not set, so nothing can load or save. Add it to .env.local (or the
+          hosting project's environment) and rebuild.
+        </p>
+      )}
       <Header />
       <Outlet />
       <Footer />

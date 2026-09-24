@@ -132,7 +132,7 @@ function HomePage() {
       <RoadLines />
 
       {/* Center content */}
-      <div className="relative flex min-h-[calc(100vh-4rem)] w-full flex-col">
+      <div className="relative flex min-h-[calc(100svh-73px)] w-full flex-col">
         {/* Floating (kept to the hero, above the street) transportation icons */}
         {floatingItems.map(({ Icon, size, delay, duration, color, ...pos }, i) => (
           <div
@@ -147,54 +147,35 @@ function HomePage() {
           </div>
         ))}
 
-      <div className="flex flex-1 items-center justify-center py-12">
-      <div className="rise-in relative z-10 flex flex-col items-center gap-12 text-center max-w-4xl">
+      <div className="flex flex-1 items-center justify-center py-4 sm:py-6">
+      <div className="rise-in relative z-10 flex max-w-4xl flex-col items-center gap-4 text-center sm:gap-5">
         {/* Logo / Brand mark */}
-        <div className="group relative">
+        <div className="group relative [@media(max-height:700px)]:hidden">
           <div className="absolute -inset-12 animate-pulse rounded-full bg-gradient-to-tr from-indigo-500/20 via-violet-500/20 to-blue-500/20 blur-3xl" />
           <BrandMark
-            size={96}
+            size={56}
             className="relative shadow-2xl transition-all duration-500 group-hover:scale-110 group-hover:rotate-3"
           />
         </div>
 
-        <div className="space-y-6">
-          <h1 className="text-7xl sm:text-8xl lg:text-9xl">
+        <div className="space-y-3">
+          <h1 className="text-[clamp(3rem,8svh,6rem)] leading-none">
             <Wordmark feature className="drop-shadow-sm" />
           </h1>
-          <p className="mx-auto max-w-2xl text-xl font-medium text-muted-foreground/90 sm:text-2xl leading-relaxed">
+          <p className="mx-auto max-w-xl text-sm leading-relaxed font-medium text-muted-foreground/90 sm:text-base lg:text-lg">
             The next generation of <span className="text-foreground">transportation mode choice</span> modelling. 
             Build, deploy, and analyze surveys with unprecedented speed.
           </p>
         </div>
 
-        {/* Stats / trust signals */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 w-full max-w-2xl">
-          {[
-            { label: 'Optimized For', value: 'Tablets & iPads', Icon: TabletSmartphone, tint: 'bg-indigo-500/10 text-indigo-500' },
-            { label: 'Data Ready', value: 'Excel / CSV / JSON', Icon: FileSpreadsheet, tint: 'bg-emerald-500/10 text-emerald-500' },
-            { label: 'Survey Flow', value: 'Dynamic & Smart', Icon: Workflow, tint: 'bg-amber-500/10 text-amber-500' },
-          ].map(({ label, value, Icon, tint }) => (
-            <div key={label} className="flex flex-col items-center gap-2 p-6 rounded-2xl border border-white/10 bg-white/5 backdrop-blur-md shadow-lg transition-transform hover:-translate-y-1">
-              <span className={`flex size-10 items-center justify-center rounded-xl ${tint}`}>
-                <Icon className="size-5" />
-              </span>
-              <div className="flex flex-col">
-                <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-indigo-500/70">{label}</span>
-                <span className="text-sm font-bold text-foreground/90">{value}</span>
-              </div>
-            </div>
-          ))}
-        </div>
-
         {/* CTA Buttons */}
-        <div className="flex flex-col gap-6 sm:flex-row items-center justify-center">
+        <div className="flex items-center justify-center gap-2 sm:gap-4">
           <Button
             size="lg"
-            className="group relative h-16 cursor-pointer overflow-hidden rounded-2xl bg-indigo-600 px-12 text-lg font-bold text-white shadow-2xl shadow-indigo-500/20 transition-all hover:scale-105 active:scale-95"
+            className="group relative h-11 cursor-pointer overflow-hidden rounded-xl bg-indigo-600 px-5 text-sm font-bold text-white shadow-2xl shadow-indigo-500/20 transition-all hover:scale-105 active:scale-95 sm:px-8 sm:text-base"
             onMouseEnter={() => setHovered('create')}
             onMouseLeave={() => setHovered(null)}
-            onClick={() => navigate({ to: '/create' })}
+            onClick={() => navigate({ to: '/surveys' })}
           >
             <div className="absolute inset-0 bg-gradient-to-r from-indigo-400 to-violet-500 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
             <span className="relative z-10 flex items-center gap-3">
@@ -211,7 +192,7 @@ function HomePage() {
           <Button
             variant="ghost"
             size="lg"
-            className="h-16 rounded-2xl px-12 text-lg font-semibold transition-all hover:bg-white/10 hover:backdrop-blur-xl border border-transparent hover:border-white/20"
+            className="h-11 rounded-xl border border-transparent px-4 text-sm font-semibold transition-all hover:border-white/20 hover:bg-white/10 hover:backdrop-blur-xl sm:px-8 sm:text-base"
             onMouseEnter={() => setHovered('learn')}
             onMouseLeave={() => setHovered(null)}
             onClick={() => document.getElementById('how-it-works')?.scrollIntoView({ behavior: 'smooth' })}
@@ -229,8 +210,27 @@ function HomePage() {
         </div>
       </div>
       </div>
-      {/* Full-bleed street along the bottom of the hero. */}
-      <TransportScene className="-mx-4 w-[calc(100%+2rem)]" />
+      {/* Reserve the street's height so the full scene is visible on arrival. */}
+      <TransportScene className="-mx-4 w-[calc(100%+2rem)] shrink-0" />
+      </div>
+
+      {/* Supporting details follow the first-screen introduction and street. */}
+      <div className="grid w-full max-w-3xl grid-cols-1 gap-4 py-8 sm:grid-cols-3">
+        {[
+          { label: 'Optimized For', value: 'Tablets & iPads', Icon: TabletSmartphone, tint: 'bg-indigo-500/10 text-indigo-500' },
+          { label: 'Data Ready', value: 'Excel / CSV / JSON', Icon: FileSpreadsheet, tint: 'bg-emerald-500/10 text-emerald-500' },
+          { label: 'Survey Flow', value: 'Dynamic & Smart', Icon: Workflow, tint: 'bg-amber-500/10 text-amber-500' },
+        ].map(({ label, value, Icon, tint }) => (
+          <div key={label} className="flex items-center justify-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-5 shadow-lg backdrop-blur-md transition-transform hover:-translate-y-1">
+            <span className={`flex size-10 shrink-0 items-center justify-center rounded-xl ${tint}`}>
+              <Icon className="size-5" />
+            </span>
+            <div className="flex flex-col">
+              <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-indigo-500/70">{label}</span>
+              <span className="text-sm font-bold text-foreground/90">{value}</span>
+            </div>
+          </div>
+        ))}
       </div>
 
       <IllustrationShowcase />

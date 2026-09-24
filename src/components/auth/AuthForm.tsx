@@ -53,7 +53,7 @@ export function AuthForm({ mode, area = 'app', redirect }: AuthFormProps) {
   const [pending, setPending] = useState<'password' | 'google' | null>(null)
   const [error, setError] = useState<string | null>(null)
   const paths = AUTH_AREAS[area]
-  const target = safeRedirect(redirect, paths.home)
+  const target = safeRedirect(redirect, paths.home, area)
   const isSignUp = mode === 'signUp'
   const copy = COPY[area][mode]
 

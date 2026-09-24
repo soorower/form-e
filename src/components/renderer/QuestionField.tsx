@@ -1,3 +1,4 @@
+import { asciiDigits } from '#/lib/questionnaire/answers'
 import type { ReactNode } from 'react'
 import { Checkbox } from '#/components/ui/checkbox'
 import { Input } from '#/components/ui/input'
@@ -179,14 +180,15 @@ function Control({ question, lang, value, onChange, inputId, labelId }: ControlP
       const unit = pickText(question.unit, lang)
       return (
         <div className="flex items-center gap-3">
+          {/* A text field: a native number input silently dropped the digits
+              a Bangla keyboard types, leaving the answer blank while the typed
+              text stayed on screen. isAnswered checks that it is a number. */}
           <Input
             id={inputId}
-            type="number"
+            type="text"
             inputMode="decimal"
-            min={question.min}
-            max={question.max}
             value={asString(value)}
-            onChange={(event) => onChange(event.target.value)}
+            onChange={(event) => onChange(asciiDigits(event.target.value))}
             className="h-12 max-w-xs text-base md:text-base"
           />
           {unit && <span className="text-muted-foreground">{unit}</span>}

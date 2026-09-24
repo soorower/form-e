@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { Workbook } from 'exceljs'
 import { EXAMPLE_CARD_TABLE, parseCardTable } from './cards'
 import { exportColumns, responsesToRows } from './export'
-import { buildResponsesWorkbook } from './export-xlsx'
+import { buildResponsesWorkbook, cellValue } from './export-xlsx'
 import { createQuestion, createQuestionnaire } from './factory'
 import type { Questionnaire, SurveyResponse } from './types'
 
@@ -88,5 +88,19 @@ describe('buildResponsesWorkbook', () => {
     expect(questions.getRow(2).getCell(1).value).toBe('1')
     expect(questions.getRow(3).getCell(1).value).toBe('2–3')
     expect(String(questions.getRow(3).getCell(5).value)).toContain('5 cards, 2 per respondent')
+  })
+})
+
+describe('cellValue', () => {
+  it('turns short numeric text into numbers and keeps long digit strings and ids as text', () => {
+    expect(cellValue('2. One-way cost', '1500')).toBe(1500)
+    expect(cellValue('2. One-way cost', '-12.5')).toBe(-12.5)
+    // A 17-digit NID came back as 12345678901234568 once it was a number.
+    expect(cellValue('3. NID', '12345678901234567')).toBe('12345678901234567')
+    expect(cellValue('Respondent phone', '01712345678')).toBe('01712345678')
+    expect(cellValue('Survey no.', '007')).toBe('007')
+    expect(cellValue('Response ID', '42')).toBe('42')
+    expect(cellValue('Set', 4)).toBe(4)
+    expect(cellValue('x', '')).toBeNull()
   })
 })

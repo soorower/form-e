@@ -18,7 +18,7 @@ interface AuthPageProps {
 export function AuthPage({ mode, area = 'app', redirect }: AuthPageProps) {
   const { loading, isAuthenticated } = useViewer()
   const navigate = useNavigate()
-  const target = safeRedirect(redirect, AUTH_AREAS[area].home)
+  const target = safeRedirect(redirect, AUTH_AREAS[area].home, area)
 
   useEffect(() => {
     if (!loading && isAuthenticated) void navigate({ href: target, replace: true })

@@ -123,7 +123,8 @@ describe('parseScenarioPlan', () => {
   })
 
   it('refuses a sheet with no card numbers at all', () => {
-    expect(() => parseScenarioPlan('Set,Scenario1\nfirst,second')).toThrow(/No card numbers/)
+    expect(() => parseScenarioPlan('Set,Scenario1\nfirst,second')).toThrow(/Row 2 holds "second"/)
+    expect(() => parseScenarioPlan('Set,Scenario1\n1,')).toThrow(/No card numbers/)
     expect(() => parseScenarioPlan('   ')).toThrow(/nothing to read/)
   })
 })
@@ -222,10 +223,11 @@ describe('splitScenarioPlan', () => {
     const rows = [{ row: 1, sets: [1, 2, 3, 4, 5, 6, 7, 8, 9] }]
     expect(splitScenarioPlan(rows, blocks.slice(0, 2)).leftover).toBe(3)
     expect(splitScenarioPlan(rows, [...blocks, { id: 'd', scenariosPerRespondent: 2 }]).missing).toBe(2)
-    // Blocks beyond the sheet simply get nothing rather than breaking.
+    // Blocks beyond the sheet have no plan, so they do not show an empty interview.
     const short = splitScenarioPlan([{ row: 1, sets: [1, 2, 3] }], blocks)
     expect(short.byBlock.get('a')![0].sets).toEqual([1, 2, 3])
-    expect(short.byBlock.get('c')![0].sets).toEqual([])
+    expect(short.byBlock.get('c')).toEqual([])
+    expect(followsPlan(block({ drawMode: 'plan', scenarioPlan: short.byBlock.get('c') }))).toBe(false)
   })
 
   it('handles blocks of different sizes, taking each in turn', () => {
