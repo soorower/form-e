@@ -172,12 +172,11 @@ function HomePage() {
         <div className="mt-6 flex items-center justify-center gap-3 sm:mt-8 sm:gap-5">
           <Button
             size="lg"
-            className="group relative h-[3.3rem] cursor-pointer overflow-hidden rounded-xl border-indigo-300/50 bg-gradient-to-b from-indigo-500 via-indigo-600 to-violet-700 px-6 text-[1.05rem] font-bold text-white shadow-[inset_0_2px_0_rgba(255,255,255,0.45),0_6px_0_#3730a3,0_12px_18px_rgba(120,53,15,0.18),0_0_28px_8px_rgba(250,204,21,0.4)] transition-all duration-200 hover:-translate-y-1 hover:shadow-[inset_0_2px_0_rgba(255,255,255,0.5),0_8px_0_#3730a3,0_16px_22px_rgba(120,53,15,0.2),0_0_36px_12px_rgba(250,204,21,0.55)] active:translate-y-1 active:shadow-[inset_0_2px_0_rgba(255,255,255,0.3),0_2px_0_#3730a3,0_6px_12px_rgba(120,53,15,0.15),0_0_24px_6px_rgba(250,204,21,0.4)] sm:px-[2.4rem] sm:text-[1.2rem]"
+            className="group relative h-[3.3rem] cursor-pointer overflow-hidden rounded-xl bg-indigo-600 px-6 text-[1.05rem] font-bold text-white shadow-[0_0_28px_8px_rgba(250,204,21,0.4)] transition-all duration-200 hover:bg-indigo-500 hover:shadow-[0_0_36px_12px_rgba(250,204,21,0.55)] active:translate-y-0 sm:px-[2.4rem] sm:text-[1.2rem]"
             onMouseEnter={() => setHovered('create')}
             onMouseLeave={() => setHovered(null)}
             onClick={() => navigate({ to: '/surveys' })}
           >
-            <span aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-white/20 to-transparent" />
             <span className="relative z-10 flex items-center gap-[0.9rem]">
               Get Started
               <svg
