@@ -428,6 +428,8 @@ export interface SurveyResponse {
   submittedAt: number
   /** When the server recorded it; absent on responses stored before this existed. */
   receivedAt?: number
+  /** Typed in from a printed paper form, under the number printed on it. */
+  paper?: boolean
 }
 
 /** What the team sees of a response: who collected it and when, never the answers. */

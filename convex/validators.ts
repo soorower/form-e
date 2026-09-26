@@ -267,4 +267,7 @@ export const responseFields = {
   // existed, and imported ones, have no `receivedAt`.
   submittedAt: v.number(),
   receivedAt: v.optional(v.number()),
+  // Typed in from a printed paper form under that form's own survey number,
+  // rather than collected on a tablet. Absent on tablet responses.
+  paper: v.optional(v.boolean()),
 }

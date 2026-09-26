@@ -3,6 +3,7 @@ import { useMutation, useQuery } from 'convex/react'
 import {
   ClipboardList,
   Eye,
+  FileText,
   MessageSquare,
   Pencil,
   Play,
@@ -312,6 +313,23 @@ function SurveyorHome({
                       >
                         <Printer data-icon="inline-start" />
                         Paper forms
+                      </Button>
+                    )}
+                    {range && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        nativeButton={false}
+                        render={
+                          <Link
+                            to={paths.fill}
+                            params={{ surveyId: survey.id }}
+                            search={{ paper: range.start }}
+                          />
+                        }
+                      >
+                        <FileText data-icon="inline-start" />
+                        Type in paper forms
                       </Button>
                     )}
                     <Button

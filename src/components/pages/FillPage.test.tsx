@@ -12,6 +12,8 @@ import { FillPage } from './FillPage'
 
 const mocks = vi.hoisted(() => ({
   submit: vi.fn(),
+  navigate: vi.fn(),
+  paperCheck: null as unknown,
   drawCards: vi.fn(),
   abandon: vi.fn(),
   stored: null as unknown,
@@ -37,6 +39,7 @@ vi.mock('convex/react', () => ({
     const name = getFunctionName(reference)
     if (name === 'questionnaires:get') return mocks.stored
     if (name === 'responses:nextSerial') return 5
+    if (name === 'responses:paperCheck') return mocks.paperCheck
     if (name === 'responses:cardExposure') {
       mocks.exposureArgs.push(args)
       return mocks.exposure
@@ -48,7 +51,7 @@ vi.mock('#/hooks/useViewer', () => ({
   useViewer: () => mocks.viewer,
 }))
 vi.mock('#/components/auth/area', () => ({
-  useSurveyPaths: () => ({ chat: '/chat', list: '/surveys', editor: '/editor' }),
+  useSurveyPaths: () => ({ chat: '/chat', list: '/surveys', editor: '/editor', fill: '/fill' }),
 }))
 vi.mock('@tanstack/react-router', () => ({
   // Keeps `to` as the href so tests can assert where a link goes; `params`
@@ -58,6 +61,7 @@ vi.mock('@tanstack/react-router', () => ({
   ),
   // The navigation guard needs a router; here there is none to block.
   useBlocker: () => undefined,
+  useNavigate: () => mocks.navigate,
 }))
 
 function setOnline(online: boolean) {
@@ -325,5 +329,64 @@ describe('FillPage getting back', () => {
     mocks.viewer = { viewer: null, isSurveyor: true, canBuild: false }
     render(<FillPage surveyId="survey-1" />)
     expect((await screen.findByText('My surveys')).getAttribute('href')).toBe('/surveys')
+  })
+})
+
+describe('FillPage typing in a paper form', () => {
+  beforeAll(() => {
+    window.scrollTo = vi.fn()
+    mocks.stored = encodeQuestionnaire({
+      ...createQuestionnaire(),
+      id: 'survey-1',
+      surveyCodePrefix: 'ACBUS-',
+      questions: [
+        {
+          ...(createQuestion('short_text') as TextQuestion),
+          label: text('Your occupation'),
+          placeholder: text('Type here'),
+        },
+      ],
+    })
+  })
+
+  beforeEach(() => {
+    localStorage.clear()
+    setOnline(true)
+    mocks.submit.mockReset()
+    mocks.navigate.mockReset()
+    mocks.viewer = {
+      viewer: { approved: true, displayName: 'Admin', code: null },
+      isSurveyor: false,
+      canBuild: true,
+    }
+    mocks.paperCheck = { number: 'ACBUS-137', taken: false, problem: null, owner: { name: 'Sorower', code: 'S02' } }
+  })
+
+  afterEach(cleanup)
+
+  it('records the answers under the printed number, for whoever the number belongs to', async () => {
+    mocks.submit.mockResolvedValue({ serial: 137, surveyNumber: 'ACBUS-137' })
+    render(<FillPage surveyId="survey-1" paperSerial={137} />)
+    expect(await screen.findByText(/Typing in paper form/)).toBeTruthy()
+    expect(screen.getAllByText('ACBUS-137').length).toBeGreaterThan(0)
+
+    await fillAndSubmit()
+    await screen.findByText('Response recorded')
+    const [sent] = mocks.submit.mock.calls[0]
+    expect(sent).toMatchObject({ paperSerial: 137, enumerator: 'Sorower' })
+  })
+
+  it('refuses a number that is already recorded before anything is typed', async () => {
+    mocks.paperCheck = { number: 'ACBUS-137', taken: true, problem: 'ACBUS-137 is already recorded.', owner: null }
+    render(<FillPage surveyId="survey-1" paperSerial={137} />)
+    expect((await screen.findByRole('alert')).textContent).toMatch(/already recorded/)
+    expect(screen.queryByPlaceholderText('Type here')).toBeNull()
+  })
+
+  it('opens a paper form from the number typed in', async () => {
+    render(<FillPage surveyId="survey-1" />)
+    fireEvent.change(await screen.findByLabelText(/Type in a paper form/), { target: { value: '42' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Open' }))
+    expect(mocks.navigate).toHaveBeenCalledWith(expect.objectContaining({ search: { paper: 42 } }))
   })
 })

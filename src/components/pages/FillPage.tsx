@@ -1,10 +1,11 @@
-import { Link, useBlocker } from '@tanstack/react-router'
+import { Link, useBlocker, useNavigate } from '@tanstack/react-router'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, FileText } from 'lucide-react'
 import { useMutation, useQuery } from 'convex/react'
 import { ConvexError } from 'convex/values'
 import { api } from '../../../convex/_generated/api'
 import { Button } from '#/components/ui/button'
+import { Input } from '#/components/ui/input'
 import {
   QuestionnaireRenderer,
   type QuestionnaireCardDraws,
@@ -30,6 +31,7 @@ import {
   removeFromOutbox,
   type PendingResponse,
 } from '#/lib/questionnaire/outbox'
+import { paperScenarios } from '#/lib/questionnaire/paper'
 import { followsPlan } from '#/lib/questionnaire/scenario-plan'
 import { getDeviceEnumerator, setDeviceEnumerator } from '#/lib/questionnaire/storage'
 import type { SurveyResponse } from '#/lib/questionnaire/types'
@@ -54,14 +56,34 @@ const DRAW_TIMEOUT_MS = 6_000
  * signed-in surveyor is recorded under their own account name and walks
  * through the questions one at a time.
  */
-export function FillPage({ surveyId, steps }: { surveyId: string; steps?: boolean }) {
+export function FillPage({
+  surveyId,
+  steps,
+  paperSerial,
+}: {
+  surveyId: string
+  steps?: boolean
+  /**
+   * Typing in the printed paper form with this survey number: the response
+   * keeps that number and shows the cards printed on the form.
+   */
+  paperSerial?: number
+}) {
   const paths = useSurveyPaths()
+  const navigate = useNavigate()
   const ready = useConvexReady()
   const stored = useQuery(api.questionnaires.get, ready ? { id: surveyId } : 'skip')
   // Decoded once per server row: decoding on every render made a new object
   // each time, and everything keyed on it re-ran for nothing.
   const questionnaire = useMemo(() => decodeQuestionnaire(stored), [stored])
   const serial = useQuery(api.responses.nextSerial, ready ? { questionnaireId: surveyId } : 'skip')
+  const paperCheck = useQuery(
+    api.responses.paperCheck,
+    ready && paperSerial !== undefined ? { questionnaireId: surveyId, serial: paperSerial } : 'skip',
+  )
+  // Paper numbers typed in on this page: once recorded, the check above says
+  // "already recorded", which must not replace the confirmation screen.
+  const [enteredHere, setEnteredHere] = useState<number | null>(null)
   const submit = useMutation(api.responses.submit)
   const drawCards = useMutation(api.responses.drawCards)
   const abandonDraw = useMutation(api.responses.abandonDraw)
@@ -110,12 +132,28 @@ export function FillPage({ surveyId, steps }: { surveyId: string; steps?: boolea
   // Blocks the server decides for: the balanced ones, and the ones that follow
   // the creator's scenario plan.
   const serverDraws =
-    questionnaire?.questions.some(
+    paperSerial === undefined &&
+    (questionnaire?.questions.some(
       (question) =>
         question.type === 'choice_experiment' &&
         question.cards.length > 0 &&
         (question.drawMode === 'balanced' || followsPlan(question)),
-    ) ?? false
+    ) ??
+      false)
+
+  // A paper form shows exactly the cards printed on it for its number.
+  const paperDraws = useMemo<QuestionnaireCardDraws | undefined>(() => {
+    if (paperSerial === undefined || !questionnaire) return undefined
+    return Object.fromEntries(
+      questionnaire.questions.flatMap((question) => {
+        if (question.type !== 'choice_experiment') return []
+        const printed = paperScenarios(question, paperSerial)
+        return [
+          [question.id, { sets: printed.scenarios.map((scenario) => scenario.set), planRow: printed.planRow }],
+        ]
+      }),
+    )
+  }, [paperSerial, questionnaire])
 
   // The counts only matter once a block has to pick for itself, which is
   // when the server did not answer in time. Subscribing on every tablet
@@ -194,6 +232,7 @@ export function FillPage({ surveyId, steps }: { surveyId: string; steps?: boolea
           // When Submit was pressed, so an interview kept on an offline
           // tablet is dated by the interview, not by the sync.
           collectedAt: pending.queuedAt,
+          ...(pending.paperSerial !== undefined ? { paperSerial: pending.paperSerial } : {}),
         })
         removeFromOutbox(pending.id)
         return saved
@@ -283,7 +322,9 @@ export function FillPage({ surveyId, steps }: { surveyId: string; steps?: boolea
       ...(response.respondent ? { respondent: response.respondent } : {}),
       answers: response.answers,
       queuedAt: Date.now(),
+      ...(paperSerial !== undefined ? { paperSerial } : {}),
     }
+    if (paperSerial !== undefined) setEnteredHere(paperSerial)
     const kept = queueResponse(pending)
     const sending = send(pending)
     // Kept on the device, so a late refusal shows up in the notice below.
@@ -338,7 +379,15 @@ export function FillPage({ surveyId, steps }: { surveyId: string; steps?: boolea
   const assigned = drawn?.id === interviewId ? drawn : null
   // The number the server held along with the cards is the one this interview
   // is recorded under; without one, the prediction.
-  const nextSerial = assigned?.serial ?? serial ?? 1
+  const nextSerial = paperSerial ?? assigned?.serial ?? serial ?? 1
+  const paperOwner = paperCheck?.owner ?? null
+  // Refused before typing starts: a number already recorded, or not the
+  // surveyor's own. After a submit here the check turns to "already
+  // recorded", which is this page's own doing.
+  const paperProblem =
+    paperSerial !== undefined && enteredHere !== paperSerial ? (paperCheck?.problem ?? null) : null
+  const openPaper = (number: number) =>
+    navigate({ to: paths.fill, params: { surveyId }, search: { paper: number } })
   let cardExposure: QuestionnaireCardExposure | undefined
   let planExposure: QuestionnairePlanExposure | undefined
   if (!serverDraws || assigned) {
@@ -403,36 +452,77 @@ export function FillPage({ surveyId, steps }: { surveyId: string; steps?: boolea
         </div>
       )}
 
+      {(canBuild || isSurveyor) && (
+        <PaperEntryBar
+          current={paperSerial}
+          prefix={questionnaire.surveyCodePrefix}
+          onOpen={openPaper}
+          onLeave={() => navigate({ to: paths.fill, params: { surveyId }, search: {} })}
+        />
+      )}
+      {paperSerial !== undefined && !paperProblem && (
+        <p className="mx-auto mb-5 w-full max-w-3xl rounded-xl border border-primary/30 bg-primary/5 px-4 py-3 text-sm">
+          Typing in paper form{' '}
+          <span className="font-mono font-semibold">
+            {formatSurveyNumber(questionnaire.surveyCodePrefix, paperSerial)}
+          </span>
+          {paperOwner && <> by {paperOwner.name}{paperOwner.code ? ` (${paperOwner.code})` : ''}</>}. The
+          scenario cards below are the ones printed on that form; copy the answers exactly as ticked.
+        </p>
+      )}
+
       <InterviewGuard active={dirty} />
-      <QuestionnaireRenderer
-        questionnaire={questionnaire}
-        meta={
-          account
-            ? {
-                serial: nextSerial,
-                surveyNumber: formatSurveyNumber(questionnaire.surveyCodePrefix, nextSerial),
-                enumerator: account.displayName,
-                locked: true,
-              }
-            : {
-                serial: nextSerial,
-                surveyNumber: formatSurveyNumber(questionnaire.surveyCodePrefix, nextSerial),
-                enumerator,
-                onEnumeratorChange: changeEnumerator,
-              }
-        }
-        cardExposure={cardExposure}
-        planExposure={planExposure}
-        cardDraws={assigned?.sets ?? undefined}
-        responseId={interviewId}
-        onRestart={() => {
-          abandon(interviewId)
-          setInterviewId(uid())
-        }}
-        onDirtyChange={setDirty}
-        onSubmit={handleSubmit}
-        mode={stepped ? 'steps' : 'page'}
-      />
+      {paperProblem ? (
+        <p
+          role="alert"
+          className="mx-auto w-full max-w-3xl rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-6 text-center text-destructive"
+        >
+          {paperProblem} Enter another survey number above.
+        </p>
+      ) : (
+        <QuestionnaireRenderer
+          questionnaire={questionnaire}
+          meta={
+            paperSerial !== undefined && (paperOwner || account)
+              ? {
+                  serial: nextSerial,
+                  surveyNumber: formatSurveyNumber(questionnaire.surveyCodePrefix, nextSerial),
+                  // The interviewer is whoever the number was handed to.
+                  enumerator: paperOwner?.name ?? account!.displayName,
+                  locked: true,
+                }
+              : account
+              ? {
+                  serial: nextSerial,
+                  surveyNumber: formatSurveyNumber(questionnaire.surveyCodePrefix, nextSerial),
+                  enumerator: account.displayName,
+                  locked: true,
+                }
+              : {
+                  serial: nextSerial,
+                  surveyNumber: formatSurveyNumber(questionnaire.surveyCodePrefix, nextSerial),
+                  enumerator,
+                  onEnumeratorChange: changeEnumerator,
+                }
+          }
+          cardExposure={cardExposure}
+          planExposure={planExposure}
+          cardDraws={paperDraws ?? assigned?.sets ?? undefined}
+          responseId={interviewId}
+          onRestart={() => {
+            // Typing in paper forms: straight on to the next number.
+            if (paperSerial !== undefined) {
+              openPaper(paperSerial + 1)
+              return
+            }
+            abandon(interviewId)
+            setInterviewId(uid())
+          }}
+          onDirtyChange={setDirty}
+          onSubmit={handleSubmit}
+          mode={stepped && paperSerial === undefined ? 'steps' : 'page'}
+        />
+      )}
       {waiting > 0 && (
         <div
           role="status"
@@ -509,4 +599,57 @@ function InterviewGuard({ active }: { active: boolean }) {
     enableBeforeUnload: () => active,
   })
   return null
+}
+
+/**
+ * "Type in a paper form": the survey number printed on the form opens the
+ * form with that number and the cards printed on it. Shown to builders and
+ * surveyors, never on a shared tablet's public page.
+ */
+function PaperEntryBar({
+  current,
+  prefix,
+  onOpen,
+  onLeave,
+}: {
+  current?: number
+  prefix: string
+  onOpen: (serial: number) => void
+  onLeave: () => void
+}) {
+  const [draft, setDraft] = useState(current ? String(current) : '')
+  useEffect(() => setDraft(current ? String(current) : ''), [current])
+  const number = Math.floor(Number(draft))
+  const valid = Number.isFinite(number) && number >= 1
+  return (
+    <form
+      className="mx-auto mb-5 flex w-full max-w-3xl flex-wrap items-center gap-2 rounded-xl border border-border bg-card px-4 py-3"
+      onSubmit={(event) => {
+        event.preventDefault()
+        if (valid) onOpen(number)
+      }}
+    >
+      <FileText className="size-4 text-muted-foreground" aria-hidden="true" />
+      <label htmlFor="paper-number" className="text-sm font-medium">
+        Type in a paper form · survey no.
+      </label>
+      <span className="font-mono text-sm text-muted-foreground">{prefix}</span>
+      <Input
+        id="paper-number"
+        type="number"
+        min={1}
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        className="h-8 w-24 tabular-nums"
+      />
+      <Button type="submit" size="sm" variant="outline" disabled={!valid}>
+        Open
+      </Button>
+      {current !== undefined && (
+        <Button type="button" size="sm" variant="ghost" onClick={onLeave}>
+          Back to tablet interviews
+        </Button>
+      )}
+    </form>
+  )
 }

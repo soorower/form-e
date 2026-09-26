@@ -113,7 +113,9 @@ export function ChoiceExperimentField({
       setPlanBroken(true)
       return
     }
-    const assigned = balanced && assignedSets ? scenariosFromSets(question, assignedSets) : []
+    // Cards handed in from outside: the server's for a balanced block, or,
+    // for any block, the ones printed on the paper form being typed in.
+    const assigned = assignedSets ? scenariosFromSets(question, assignedSets) : []
     onChange({
       scenarios: assigned.length > 0 ? assigned : drawScenarios(question, undefined, exposure),
     })

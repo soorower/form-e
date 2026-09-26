@@ -75,6 +75,7 @@ describe('responsesToRows', () => {
       'Submitted at': localIso(response.submittedAt),
       'Received at': '',
       Language: 'bn',
+      Source: 'Tablet',
       '1. Gender': '1) Male',
       '2. One-way cost': '1500',
       '5. Willingness to pay': '200',
@@ -228,11 +229,11 @@ describe('exportColumns and toCsv', () => {
       'Submitted at',
       'Received at',
       'Language',
+      'Source',
       '1. Gender',
       '2. One-way cost',
-      '5. Willingness to pay',
     ])
-    expect(columns.slice(10, 14)).toEqual(['Block', 'Question', 'Scenario', 'Set'])
+    expect(columns.slice(11, 15)).toEqual(['Block', 'Question', 'Scenario', 'Set'])
     expect(columns.at(-1)).toBe('Choice')
     expect(columns).toContain('Reliability_B')
   })

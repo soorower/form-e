@@ -54,10 +54,11 @@ export function PaperForm({ questionnaire, serial, lang, enumerator, newPage }: 
     <article
       lang={lang}
       className={cn(
-        'mx-auto w-full max-w-[190mm] space-y-4 bg-white p-6 text-[10.5pt] leading-snug text-black shadow-sm ring-1 ring-black/10 print:max-w-none print:p-0 print:shadow-none print:ring-0',
+        '[orphans:3] [widows:3] [&_h2]:break-after-avoid [&_h3]:break-after-avoid mx-auto w-full max-w-[190mm] space-y-4 bg-white p-6 text-[10.5pt] leading-snug text-black shadow-sm ring-1 ring-black/10 print:max-w-none print:p-0 print:shadow-none print:ring-0',
         newPage && 'break-before-page',
       )}
     >
+      <div className="break-inside-avoid space-y-4">
       <div className="space-y-1 text-center">
         {questionnaire.logo && (
           <img src={questionnaire.logo} alt="" className="mx-auto mb-1 h-14 w-auto object-contain" />
@@ -105,9 +106,10 @@ export function PaperForm({ questionnaire, serial, lang, enumerator, newPage }: 
           </p>
         )}
       </div>
+      </div>
 
       {respondentFields.length > 0 && (
-        <div className="space-y-2">
+        <div className="break-inside-avoid space-y-2">
           <p className="font-semibold">{t('Respondent details', 'উত্তরদাতার তথ্য')}</p>
           {respondentFields.map((field) => {
             const meta = RESPONDENT_FIELDS.find((candidate) => candidate.key === field.key)
@@ -339,8 +341,8 @@ function PaperChoiceBlock({
   const intro = pickText(question.help, lang)
   const last = number + blockQuestionCount(question) - 1
 
-  return (
-    <section className="space-y-3">
+  const heading = (
+    <>
       <h3
         className={cn(
           'border-y border-black bg-neutral-100 px-2 py-1 text-[11pt]',
@@ -353,21 +355,34 @@ function PaperChoiceBlock({
         </span>
       </h3>
       {intro && <p className="whitespace-pre-line">{intro}</p>}
-      {scenarios.length === 0 && (
-        <p className="border border-dashed border-black p-2 text-center">
-          {t('This section has no design cards yet.', 'এই অংশে এখনও কোনো কার্ড নেই।')}
-        </p>
-      )}
-      {scenarios.map((scenario, index) => (
-        <PaperScenario
-          key={index}
-          question={question}
-          scenario={scenario}
-          index={index}
-          number={number + index * perScenario}
-          lang={lang}
-        />
-      ))}
+    </>
+  )
+  const scenario = (index: number) => (
+    <PaperScenario
+      key={index}
+      question={question}
+      scenario={scenarios[index]}
+      index={index}
+      number={number + index * perScenario}
+      lang={lang}
+    />
+  )
+
+  // The heading and introduction travel with the first scenario, so a
+  // section title is never left alone at the foot of a page.
+  return (
+    <section className="space-y-3">
+      <div className="break-inside-avoid space-y-3">
+        {heading}
+        {scenarios.length === 0 ? (
+          <p className="border border-dashed border-black p-2 text-center">
+            {t('This section has no design cards yet.', 'এই অংশে এখনও কোনো কার্ড নেই।')}
+          </p>
+        ) : (
+          scenario(0)
+        )}
+      </div>
+      {scenarios.slice(1).map((_unused, offset) => scenario(offset + 1))}
     </section>
   )
 }

@@ -234,6 +234,8 @@ export function responsesToRows(
       'Submitted at': localIso(response.submittedAt),
       'Received at': response.receivedAt === undefined ? '' : localIso(response.receivedAt),
       Language: response.language,
+      // Typed in from a printed form, or collected on a tablet.
+      Source: response.paper ? 'Paper' : 'Tablet',
     }
     const scenarioRows: ExportRow[] = []
 

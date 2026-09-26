@@ -1,5 +1,6 @@
 import { ConvexError, v, type Infer } from 'convex/values'
 import { paginationOptsValidator } from 'convex/server'
+import type { Doc } from './_generated/dataModel'
 import { mutation, query, type MutationCtx, type QueryCtx } from './_generated/server'
 import {
   CARD_RESERVATION_MS,
@@ -10,14 +11,16 @@ import {
   type CardCounts,
 } from './cardBalance'
 import { recordSummary } from './responseSummaries'
-import { pickSerial, planRowForSerial, type SerialRange } from './serials'
+import { inRange, pickSerial, planRowForSerial, type SerialRange } from './serials'
 import {
   canAccess,
+  canBuild,
   canView,
   displayName,
   isApproved,
   questionnaireByAppId,
   requireBuilder,
+  roleOf,
   trustedEmail,
   viewerAccess,
   type Access,
@@ -184,6 +187,77 @@ async function deleteDrawsFor(ctx: MutationCtx, responseId: string) {
 }
 
 /**
+ * Whether the caller may type in the paper form printed for survey number
+ * `serial`, and whose it is. Builders on the survey may enter any number; a
+ * surveyor only numbers inside their own range. `problem` says why not.
+ */
+async function paperEntry(
+  ctx: QueryCtx | MutationCtx,
+  questionnaire: Doc<'questionnaires'>,
+  access: Access | null,
+  serial: number,
+) {
+  const ranges = await surveyRanges(ctx, questionnaire.id)
+  const ownerRange = ranges.find((range) => inRange(serial, range)) ?? null
+  const accounts = ownerRange
+    ? await ctx.db
+        .query('users')
+        .withIndex('email', (q) => q.eq('email', ownerRange.email))
+        .collect()
+    : []
+  const owner = accounts.find((account) => roleOf(account) === 'surveyor') ?? accounts[0] ?? null
+  const number = formatSurveyNumber(questionnaire.surveyCodePrefix, serial)
+  const taken =
+    (await ctx.db
+      .query('responses')
+      .withIndex('by_serial', (q) => q.eq('questionnaireId', questionnaire.id).eq('serial', serial))
+      .first()) !== null
+
+  let problem: string | null = null
+  if (!Number.isInteger(serial) || serial < 1) {
+    problem = 'Survey numbers are whole numbers from 1.'
+  } else if (!access || !isApproved(access)) {
+    problem = 'Sign in to enter paper forms.'
+  } else if (!canBuild(access)) {
+    const email = trustedEmail(access.user)
+    const own = ranges.find((range) => range.email === email)
+    if (!own) problem = 'The admin has not given you a block of survey numbers on this survey.'
+    else if (!inRange(serial, own)) {
+      problem = `${number} is not one of your numbers (${own.start}–${own.end}).`
+    }
+  } else if (!canAccess(access, questionnaire)) {
+    problem = 'You do not have access to this survey.'
+  }
+  if (!problem && taken) problem = `${number} is already recorded.`
+  return {
+    number,
+    taken,
+    problem,
+    owner: owner ? { user: owner, name: displayName(owner), code: owner.surveyorCode ?? null } : null,
+  }
+}
+
+/**
+ * Checks a paper form's survey number before its answers are typed in:
+ * whether it is free, whether the caller may enter it, and whose range it is
+ * in (their name is recorded as the enumerator).
+ */
+export const paperCheck = query({
+  args: { questionnaireId: v.string(), serial: v.number() },
+  handler: async (ctx, { questionnaireId, serial }) => {
+    const questionnaire = await questionnaireByAppId(ctx, questionnaireId)
+    if (!questionnaire) return null
+    const entry = await paperEntry(ctx, questionnaire, await viewerAccess(ctx), serial)
+    return {
+      number: entry.number,
+      taken: entry.taken,
+      problem: entry.problem,
+      owner: entry.owner ? { name: entry.owner.name, code: entry.owner.code } : null,
+    }
+  },
+})
+
+/**
  * One page of a survey's full responses, in survey-number order, for the
  * Responses tab and its downloads. Paged because a 700-response survey's
  * answers are several megabytes: one query reading them all would sit near
@@ -265,6 +339,9 @@ export const submit = mutation({
     // When Submit was pressed on the tablet. Without it an interview kept on
     // an offline tablet was dated by the sync, hours or a day later.
     collectedAt: v.optional(v.number()),
+    // A printed paper form being typed in: recorded under the number printed
+    // on it, with the cards that number was printed with.
+    paperSerial: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const duplicate = await ctx.db
@@ -289,7 +366,7 @@ export const submit = mutation({
     // Public, so the payload is checked here: a response to a deleted survey
     // has nowhere to go, and junk must not be able to fill the table.
     if (!questionnaire) throw new ConvexError('This survey no longer exists.')
-    const { respondent, answers, collectedAt, ...rest } = args
+    const { respondent, answers, collectedAt, paperSerial, ...rest } = args
     if (typeof answers !== 'object' || answers === null || Array.isArray(answers)) {
       throw new ConvexError('The answers are not in the shape the app sends.')
     }
@@ -309,20 +386,33 @@ export const submit = mutation({
           q.eq('questionnaireId', args.questionnaireId).eq('serial', held),
         )
         .first()) === null
+    // A paper form keeps the number printed on it; the owner of the range it
+    // is in is the one who interviewed, whoever types it in.
+    const paper =
+      paperSerial === undefined
+        ? null
+        : await paperEntry(ctx, questionnaire, access, paperSerial)
+    if (paper?.problem) throw new ConvexError(paper.problem)
     const serial =
-      heldFree && held !== undefined
-        ? held
-        : await nextFreeSerial(ctx, args.questionnaireId, access, now, args.id)
+      paperSerial !== undefined
+        ? paperSerial
+        : heldFree && held !== undefined
+          ? held
+          : await nextFreeSerial(ctx, args.questionnaireId, access, now, args.id)
     const surveyNumber = formatSurveyNumber(questionnaire.surveyCodePrefix, serial)
 
     // A signed-in, approved account is stamped onto the response. A
     // surveyor's responses always carry their own name, whatever the tablet
     // sent, so the leaderboard cannot be gamed by typing another name.
-    const signedIn = access && isApproved(access) ? access : null
+    const approved = access && isApproved(access) ? access : null
+    const collector = paper?.owner?.user ?? approved?.user ?? null
+    const signedIn = collector ? { user: collector, role: roleOf(collector) } : null
     const enumerator =
-      signedIn?.role === 'surveyor'
-        ? displayName(signedIn.user)
-        : args.enumerator.trim().slice(0, MAX_NAME_LENGTH)
+      paper?.owner
+        ? paper.owner.name
+        : signedIn?.role === 'surveyor'
+          ? displayName(signedIn.user)
+          : args.enumerator.trim().slice(0, MAX_NAME_LENGTH)
     const details = cleanDetails(respondent)
 
     const response = {
@@ -341,6 +431,7 @@ export const submit = mutation({
       // The tablet's time when it sent one, never in the future of the server's.
       submittedAt: collectedAt === undefined ? now : Math.min(collectedAt, now),
       receivedAt: now,
+      ...(paper ? { paper: true } : {}),
     }
     await ctx.db.insert('responses', response)
     await recordSummary(ctx, response)

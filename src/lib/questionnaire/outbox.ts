@@ -20,6 +20,8 @@ export interface PendingResponse {
   respondent?: RespondentDetails
   answers: Record<string, AnswerValue>
   queuedAt: number
+  /** A paper form being typed in: the survey number printed on it. */
+  paperSerial?: number
   /**
    * The server's reason for turning it down. Such a copy is kept, so nothing
    * is lost, but not sent again by itself: the same payload would only be
