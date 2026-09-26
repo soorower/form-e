@@ -6,6 +6,7 @@ import { Checkbox } from '#/components/ui/checkbox'
 import { Input } from '#/components/ui/input'
 import { Label } from '#/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '#/components/ui/select'
+import { drawScaled, loadImage } from '#/lib/image'
 import { LANGUAGES, LANGUAGE_LABELS, formatSurveyNumber } from '#/lib/questionnaire/factory'
 import {
   RESPONDENT_FIELDS,
@@ -33,41 +34,11 @@ function readAsDataUrl(file: File): Promise<string> {
   })
 }
 
-function loadImage(src: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const image = new Image()
-    image.onload = () => resolve(image)
-    image.onerror = () => reject(new Error('Image failed to load'))
-    image.src = src
-  })
-}
-
 /**
  * The stored data URL must stay small: it rides inside the survey document,
  * so every list, every autosave and every tablet load carries it.
  */
 const MAX_LOGO_DATA_URL = 160_000
-
-function drawScaled(
-  image: HTMLImageElement,
-  width: number,
-  height: number,
-  edge: number,
-  background?: string,
-): HTMLCanvasElement | null {
-  const scale = Math.min(1, edge / Math.max(width, height))
-  const canvas = document.createElement('canvas')
-  canvas.width = Math.max(1, Math.round(width * scale))
-  canvas.height = Math.max(1, Math.round(height * scale))
-  const context = canvas.getContext('2d')
-  if (!context) return null
-  if (background) {
-    context.fillStyle = background
-    context.fillRect(0, 0, canvas.width, canvas.height)
-  }
-  context.drawImage(image, 0, 0, canvas.width, canvas.height)
-  return canvas
-}
 
 /**
  * Downscales the logo so its data URL stays small enough to store inline.

@@ -134,8 +134,29 @@ export const question = v.union(
     layout: v.optional(v.union(v.literal('alternatives'), v.literal('profile'))),
     attributeHeader: v.optional(localizedText),
     alternatives: v.array(v.object({ key: v.string(), label: localizedText })),
+    alternativesHeader: v.optional(localizedText),
     attributes: v.array(
-      v.object({ key: v.string(), label: localizedText, group: v.optional(localizedText) }),
+      v.object({
+        key: v.string(),
+        label: localizedText,
+        group: v.optional(localizedText),
+        // A picture row above the attribute, chosen by level (and alternative).
+        // Level text travels as a value here, never as a field name.
+        pictures: v.optional(
+          v.object({
+            label: localizedText,
+            perAlternative: v.boolean(),
+            items: v.array(
+              v.object({
+                alternative: v.string(),
+                level: v.string(),
+                url: v.string(),
+                storageId: v.optional(v.string()),
+              }),
+            ),
+          }),
+        ),
+      }),
     ),
     referenceColumns: v.optional(
       v.array(v.object({ key: v.string(), label: localizedText, text: localizedText })),

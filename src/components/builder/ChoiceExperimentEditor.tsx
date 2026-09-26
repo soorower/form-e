@@ -44,6 +44,7 @@ import type {
   Lang,
   LocalizedText,
 } from '#/lib/questionnaire/types'
+import { ChoicePicturesEditor } from './ChoicePicturesEditor'
 import { LocalizedInput } from './LocalizedInput'
 
 interface ChoiceExperimentEditorProps {
@@ -590,6 +591,20 @@ export function ChoiceExperimentEditor({
           ) : (
             <div className="space-y-2">
               <Label>Alternative headings</Label>
+              <LocalizedInput
+                value={question.alternativesHeader ?? text()}
+                onChange={(alternativesHeader) =>
+                  onChange({
+                    // An emptied heading is dropped rather than stored as blank text.
+                    alternativesHeader:
+                      alternativesHeader.en.trim() || alternativesHeader.bn.trim()
+                        ? alternativesHeader
+                        : undefined,
+                  })
+                }
+                languages={languages}
+                placeholder="Heading over all alternatives (optional), e.g. Approximate condition"
+              />
               <div className="space-y-2">
                 {question.alternatives.map((alternative) => (
                   <div key={alternative.key} className="flex items-start gap-2">
@@ -709,6 +724,8 @@ export function ChoiceExperimentEditor({
               )
             })}
           </div>
+
+          <ChoicePicturesEditor question={question} languages={languages} onChange={onChange} />
         </>
       )}
 

@@ -1,4 +1,5 @@
 import { ConvexError, v } from 'convex/values'
+import type { Doc, Id } from './_generated/dataModel'
 import { mutation, query } from './_generated/server'
 import {
   assertAccess,
@@ -129,6 +130,15 @@ export const remove = mutation({
     assertAccess(access, questionnaire)
     await ctx.db.delete(questionnaire._id)
 
+    // The pictures its choice tables showed, kept in file storage.
+    for (const storageId of pictureStorageIds(questionnaire.questions)) {
+      try {
+        await ctx.storage.delete(storageId as Id<'_storage'>)
+      } catch {
+        // Already gone; nothing else refers to it.
+      }
+    }
+
     const responses = await ctx.db
       .query('responses')
       .withIndex('by_questionnaire', (q) => q.eq('questionnaireId', id))
@@ -162,3 +172,17 @@ export const remove = mutation({
     for (const message of messages) await ctx.db.delete(message._id)
   },
 })
+
+/** Storage ids of every picture in the survey's choice tables, each once. */
+function pictureStorageIds(questions: Doc<'questionnaires'>['questions']): string[] {
+  const ids = new Set<string>()
+  for (const question of questions) {
+    if (question.type !== 'choice_experiment') continue
+    for (const attribute of question.attributes) {
+      for (const item of attribute.pictures?.items ?? []) {
+        if (item.storageId) ids.add(item.storageId)
+      }
+    }
+  }
+  return [...ids]
+}

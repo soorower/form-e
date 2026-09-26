@@ -125,6 +125,38 @@ export interface ChoiceAttribute {
    * the order of `attributes`, which the editor can rearrange.
    */
   group?: LocalizedText
+  /**
+   * A row of pictures shown directly above this attribute's row, one per
+   * alternative, chosen by the level the card shows: a photo of a potholed
+   * road for "Poor with pothole", of a new road for "New road". Absent when
+   * the attribute has no pictures.
+   */
+  pictures?: AttributePictures
+}
+
+/**
+ * One picture for one level of an attribute. The pavement survey has a
+ * different photo of each road condition for rigid and flexible pavement, so
+ * a picture may belong to one alternative; `alternative: ''` shows it under
+ * every alternative.
+ */
+export interface LevelPicture {
+  /** Alternative key the picture is for, or '' for all of them. */
+  alternative: string
+  /** The raw level text from the cards, as `ChoiceCard.levels` holds it. */
+  level: string
+  /** Where the picture is served from (Convex file storage). */
+  url: string
+  /** The Convex storage id behind `url`, so the file goes when the survey does. */
+  storageId?: string
+}
+
+export interface AttributePictures {
+  /** Heading of the picture row, e.g. "Road picture" / "রাস্তার ছবি". */
+  label: LocalizedText
+  /** Whether each alternative has its own picture of the same level. */
+  perAlternative: boolean
+  items: LevelPicture[]
 }
 
 /**
@@ -218,6 +250,12 @@ export interface ChoiceExperimentQuestion extends QuestionBase {
   layout: ChoiceLayout
   /** Heading of the first table column, e.g. "Trip attributes" / "Type of facility". */
   attributeHeader: LocalizedText
+  /**
+   * Optional heading spanning every alternative column, above their own
+   * headings: "Approximate condition" over "Rigid | Flexible". Absent or
+   * empty shows no such row.
+   */
+  alternativesHeader?: LocalizedText
   alternatives: ChoiceAlternative[]
   attributes: ChoiceAttribute[]
   /** Profile layout only. */

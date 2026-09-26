@@ -301,3 +301,76 @@ describe('QuestionnaireRenderer keys and notices', () => {
     expect(alert.textContent).not.toMatch(/internet connection/)
   })
 })
+
+describe('QuestionnaireRenderer picture rows', () => {
+  beforeAll(() => {
+    window.scrollTo = vi.fn()
+  })
+
+  afterEach(cleanup)
+
+  /** The pavement design: a road photo per condition, different for rigid and flexible. */
+  function pavement(): Questionnaire {
+    const block = createQuestion('choice_experiment') as ChoiceExperimentQuestion
+    Object.assign(block, {
+      id: 'block',
+      label: text('Pavement choice'),
+      drawMode: 'plan' as const,
+      attributeHeader: text('Type of facility'),
+      alternativesHeader: text('Approximate condition'),
+      alternatives: [
+        { key: 'Rigid', label: text('Rigid pavement') },
+        { key: 'Flexible', label: text('Flexible pavement') },
+      ],
+      attributes: [
+        {
+          key: 'Road',
+          label: text('Road condition'),
+          pictures: {
+            label: text('Road picture'),
+            perAlternative: true,
+            items: [
+              { alternative: 'Rigid', level: 'Poor', url: 'https://x.test/rigid-poor.jpg' },
+              { alternative: 'Flexible', level: 'New', url: 'https://x.test/flexible-new.jpg' },
+            ],
+          },
+        },
+        { key: 'Cost', label: text('Travel cost') },
+      ],
+      cards: [
+        { set: 1, levels: { Road_Rigid: 'Poor', Road_Flexible: 'New', Cost_Rigid: '120tk', Cost_Flexible: '100tk' } },
+        // No picture for a new rigid road: the cell stays empty.
+        { set: 2, levels: { Road_Rigid: 'New', Road_Flexible: 'New', Cost_Rigid: '100tk', Cost_Flexible: '100tk' } },
+      ],
+      scenarioPlan: [{ row: 1, sets: [1, 2] }],
+      scenariosPerRespondent: 2,
+    })
+    return { ...createQuestionnaire(), title: text('Pavement survey'), questions: [block] }
+  }
+
+  it('shows the picture of each alternative’s level in a row above the attribute', async () => {
+    render(
+      <QuestionnaireRenderer
+        questionnaire={pavement()}
+        cardExposure={{}}
+        planExposure={{}}
+        cardDraws={{ block: { sets: [1, 2], planRow: 1 } }}
+      />,
+    )
+    const [first, second] = await screen.findAllByRole('table')
+    const pictures = (table: HTMLElement) =>
+      Array.from(table.querySelectorAll('img')).map((img) => [img.getAttribute('src'), img.getAttribute('alt')])
+    expect(pictures(first)).toEqual([
+      ['https://x.test/rigid-poor.jpg', 'Road condition: Poor'],
+      ['https://x.test/flexible-new.jpg', 'Road condition: New'],
+    ])
+    expect(pictures(second)).toEqual([['https://x.test/flexible-new.jpg', 'Road condition: New']])
+
+    // The picture row sits directly above its attribute, headed by its own label.
+    const rowHeads = Array.from(first.querySelectorAll('tbody th')).map((th) => th.textContent)
+    expect(rowHeads.slice(0, 3)).toEqual(['Road picture', 'Road condition', 'Travel cost'])
+    // "Approximate condition" spans both alternative columns.
+    const spanning = screen.getAllByText('Approximate condition')[0]
+    expect(spanning.getAttribute('colspan')).toBe('2')
+  })
+})

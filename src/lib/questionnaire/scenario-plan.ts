@@ -52,6 +52,23 @@ export interface ParsedScenarioPlan {
 }
 
 /**
+ * The table up to its first empty column. Allocation sheets often keep a
+ * second table to the right, such as a "Frequency" count of how often each
+ * card comes up, and a whole-sheet paste would otherwise read its numbers as
+ * more cards. A column only ends the plan when something follows it, so rows
+ * of different lengths are left alone.
+ */
+function beforeBlankColumn(table: string[][]): string[][] {
+  const width = Math.max(0, ...table.map((cells) => cells.length))
+  for (let column = 1; column < width - 1; column++) {
+    if (table.some((cells) => (cells[column] ?? '') !== '')) continue
+    const laterContent = table.some((cells) => cells.slice(column + 1).some((cell) => cell !== ''))
+    if (laterContent) return table.map((cells) => cells.slice(0, column))
+  }
+  return table
+}
+
+/**
  * Reads a pasted or uploaded scenario sheet. Throws when nothing in it looks
  * like a plan, so the editor can say so instead of storing an empty plan.
  *
@@ -61,15 +78,22 @@ export interface ParsedScenarioPlan {
  * every column is a card and the rows are numbered in the order pasted.
  */
 export function parseScenarioPlan(input: string): ParsedScenarioPlan {
-  const table = parseDelimited(input)
+  const table = beforeBlankColumn(parseDelimited(input))
   if (table.length === 0) throw new Error('There is nothing to read. Paste the scenario sheet first.')
 
   // A plan row starts with a count (its number or its first card); a header
   // starts with a word. Judging the whole row let "Set | 1 | 2 | 3" pass as
-  // a plan row, which then read every real row's number as a card.
-  const firstFilled = table[0].find((cell) => cell !== '') ?? ''
-  const hadHeader = !isCount(firstFilled)
-  const body = hadHeader ? table.slice(1) : table
+  // a plan row, which then read every real row's number as a card. A header
+  // may take several rows, as Excel sheets with merged headings do
+  // ("Set | Card No" over "Pavement Choice" over "Scenario 1 | Scenario 2"),
+  // so every row before the first plan row is header.
+  const startsWithCount = (cells: string[]) => isCount(cells.find((cell) => cell !== '') ?? '')
+  const firstPlanRow = table.findIndex(startsWithCount)
+  // With no plan row at all, the first row alone is taken as the header so
+  // the error below names the row that holds the odd cell.
+  const headerRows = firstPlanRow === -1 ? (startsWithCount(table[0]) ? 0 : 1) : firstPlanRow
+  const hadHeader = headerRows > 0
+  const body = table.slice(headerRows)
   if (body.length === 0) {
     throw new Error('The sheet has a header but no rows of card numbers under it.')
   }
@@ -83,13 +107,14 @@ export function parseScenarioPlan(input: string): ParsedScenarioPlan {
   const numbersRows = firstCells.every(
     (value, index) => isCount(value) && toCount(value) === index + 1,
   )
-  const hadRowColumn = (hadHeader && ROW_COLUMN.test(table[0][0] ?? '')) || numbersRows
+  const hadRowColumn =
+    table.slice(0, headerRows).some((cells) => ROW_COLUMN.test(cells[0] ?? '')) || numbersRows
 
   const rows: ScenarioPlanRow[] = []
   const skippedRows: number[] = []
   const odd: { row: number; value: string }[] = []
   body.forEach((cells, index) => {
-    const sheetRow = index + (hadHeader ? 2 : 1)
+    const sheetRow = index + headerRows + 1
     const label = hadRowColumn ? (cells[0] ?? '') : ''
     const values = hadRowColumn ? cells.slice(1) : cells
     // A cell that is filled but no card number (#N/A from a broken lookup,

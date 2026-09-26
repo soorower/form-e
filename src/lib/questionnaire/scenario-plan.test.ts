@@ -34,6 +34,30 @@ describe('parseScenarioPlan', () => {
     expect(plan.hadRowColumn).toBe(true)
   })
 
+  it('reads a three-row header and ignores a second table to the right of the plan', () => {
+    // The pavement workbook's `Frequency` sheet as a whole-sheet copy: merged
+    // "Set" and "Card No" headings over "Pavement Choice" over the scenario
+    // names, and a card-frequency table after four empty columns.
+    const plan = parseScenarioPlan(
+      [
+        'Set\tCard No\t\t\t\t\t\t\tFrequency\t\t\t',
+        '\tPavement Choice\t\t\t\t\t\t\tPavement Choice\t\t\t',
+        '\tScenario 1\tScenario 2\tScenario 3\t\t\t\t\tCard\tScenario 1\tScenario 2\tScenario 3',
+        '1\t57\t64\t8\t\t\t\t\t2\t10\t10\t9',
+        '2\t14\t45\t61\t\t\t\t\t3\t10\t10\t9',
+        '3\t25\t56\t45',
+      ].join('\n'),
+    )
+    expect(plan.hadHeader).toBe(true)
+    expect(plan.hadRowColumn).toBe(true)
+    expect(plan.rows).toEqual([
+      { row: 1, sets: [57, 64, 8] },
+      { row: 2, sets: [14, 45, 61] },
+      { row: 3, sets: [25, 56, 45] },
+    ])
+    expect(plan.scenariosPerRow).toBe(3)
+  })
+
   it('reads the example, and a comma-separated file the same way', () => {
     const pasted = parseScenarioPlan(EXAMPLE_SCENARIO_PLAN)
     const csv = parseScenarioPlan(EXAMPLE_SCENARIO_PLAN.replace(/\t/g, ','))

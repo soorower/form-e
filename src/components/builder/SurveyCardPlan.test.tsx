@@ -17,6 +17,8 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('convex/react', () => ({
   useQuery: (_reference: unknown, args: unknown) => (args === 'skip' ? undefined : mocks.exposure),
+  // The block editor's picture uploads; nothing is uploaded here.
+  useMutation: () => vi.fn(),
 }))
 
 function block(id: string, label: string, patch: Partial<ChoiceExperimentQuestion> = {}) {

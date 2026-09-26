@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { Fragment, useEffect, useState, type ReactNode } from 'react'
 import { Input } from '#/components/ui/input'
 import {
   OTHER_ANSWER,
@@ -16,6 +16,7 @@ import {
   type CardExposure,
 } from '#/lib/questionnaire/cards'
 import { formatNumber, pickText } from '#/lib/questionnaire/factory'
+import { levelPicture, pictureUrls } from '#/lib/questionnaire/pictures'
 import { followsPlan, leastUsedPlanRow, scenariosFromPlanRow } from '#/lib/questionnaire/scenario-plan'
 import { FORM_TEXT_DEFAULTS, localizedStyleClass } from '#/lib/questionnaire/text-style'
 import type {
@@ -129,6 +130,18 @@ export function ChoiceExperimentField({
     planExposure,
     onChange,
   ])
+
+  // Every picture the block may show is fetched up front, while the tablet
+  // is still online, so a later scenario's picture is already there when the
+  // interview carries on without a connection.
+  const pictures = pictureUrls(question).join('\n')
+  useEffect(() => {
+    if (!pictures) return
+    for (const url of pictures.split('\n')) {
+      const image = new Image()
+      image.src = url
+    }
+  }, [pictures])
 
   const t = (en: string, bn: string) => (lang === 'bn' ? bn : en)
   const title = pickText(question.label, lang)
@@ -324,6 +337,40 @@ function attributeName(attribute: ChoiceAttribute, lang: Lang) {
   return pickText(attribute.label, lang) || attribute.key
 }
 
+/**
+ * One picture in a scenario table: the picture of the level this card shows
+ * for this alternative (a potholed rigid road, a new flexible one). A level
+ * with no picture leaves the cell empty.
+ */
+function PictureCell({
+  question,
+  attribute,
+  alternative,
+  level,
+  lang,
+}: {
+  question: ChoiceExperimentQuestion
+  attribute: ChoiceAttribute
+  alternative: string
+  level: string
+  lang: Lang
+}) {
+  const picture = levelPicture(attribute, alternative, level)
+  if (!picture) return null
+  return (
+    <img
+      src={picture.url}
+      alt={`${attributeName(attribute, lang)}: ${levelLabel(question, level, lang)}`}
+      className="mx-auto h-40 w-full max-w-72 rounded-md bg-muted object-contain sm:h-48"
+    />
+  )
+}
+
+/** Heading of an attribute's picture row, e.g. "Road picture". */
+function pictureRowName(attribute: ChoiceAttribute, lang: Lang) {
+  return (attribute.pictures && pickText(attribute.pictures.label, lang)) || attributeName(attribute, lang)
+}
+
 interface AlternativesTableProps {
   question: ChoiceExperimentQuestion
   scenario: ChoiceScenarioAnswer
@@ -348,15 +395,39 @@ function AlternativesTable({
   const { alternatives } = question
   const sections = attributeSections(question.attributes)
   const chosen = inlinePrompt ? scenarioChoice(scenario, inlinePrompt.prompt, 0) : ''
+  // "Approximate condition" spanning "Rigid | Flexible", as the paper form has it.
+  const alternativesHeader = question.alternativesHeader
+    ? pickText(question.alternativesHeader, lang)
+    : ''
 
   return (
     <div className="overflow-x-auto rounded-xl border border-border">
       <table className="w-full border-collapse text-base">
         <thead>
+          {alternativesHeader && (
+            <tr className="bg-muted/70">
+              <th
+                scope="col"
+                rowSpan={2}
+                className="min-w-40 border-b border-border p-3 text-left align-middle font-bold"
+              >
+                {attributeHeader}
+              </th>
+              <th
+                scope="colgroup"
+                colSpan={alternatives.length}
+                className="border-b border-l border-border p-3 text-center font-bold"
+              >
+                {alternativesHeader}
+              </th>
+            </tr>
+          )}
           <tr className="bg-muted/70">
-            <th scope="col" className="min-w-40 border-b border-border p-3 text-left font-bold">
-              {attributeHeader}
-            </th>
+            {!alternativesHeader && (
+              <th scope="col" className="min-w-40 border-b border-border p-3 text-left font-bold">
+                {attributeHeader}
+              </th>
+            )}
             {alternatives.map((alternative) => (
               <th
                 key={alternative.key}
@@ -376,23 +447,43 @@ function AlternativesTable({
               span={alternatives.length + 1}
             >
               {section.attributes.map((attribute) => (
-                <tr key={attribute.key} className="border-b border-border">
-                  <th scope="row" className="p-3 text-left font-medium">
-                    {attributeName(attribute, lang)}
-                  </th>
-                  {alternatives.map((alternative) => (
-                    <td
-                      key={alternative.key}
-                      className="border-l border-border p-3 text-center whitespace-pre-line"
-                    >
-                      {levelLabel(
-                        question,
-                        scenario.levels[columnKey(question, attribute.key, alternative.key)] ?? '',
-                        lang,
-                      )}
-                    </td>
-                  ))}
-                </tr>
+                <Fragment key={attribute.key}>
+                  {attribute.pictures && (
+                    <tr className="border-b border-border">
+                      <th scope="row" className="p-3 text-left font-medium">
+                        {pictureRowName(attribute, lang)}
+                      </th>
+                      {alternatives.map((alternative) => (
+                        <td key={alternative.key} className="border-l border-border p-2 text-center">
+                          <PictureCell
+                            question={question}
+                            attribute={attribute}
+                            alternative={alternative.key}
+                            level={scenario.levels[columnKey(question, attribute.key, alternative.key)] ?? ''}
+                            lang={lang}
+                          />
+                        </td>
+                      ))}
+                    </tr>
+                  )}
+                  <tr className="border-b border-border">
+                    <th scope="row" className="p-3 text-left font-medium">
+                      {attributeName(attribute, lang)}
+                    </th>
+                    {alternatives.map((alternative) => (
+                      <td
+                        key={alternative.key}
+                        className="border-l border-border p-3 text-center whitespace-pre-line"
+                      >
+                        {levelLabel(
+                          question,
+                          scenario.levels[columnKey(question, attribute.key, alternative.key)] ?? '',
+                          lang,
+                        )}
+                      </td>
+                    ))}
+                  </tr>
+                </Fragment>
               ))}
             </SectionRows>
           ))}
@@ -481,8 +572,24 @@ function ProfileTable({ question, scenario, lang, attributeHeader }: ProfileTabl
   // row below it, section headings included; a heading above the first
   // attribute is the only one that spans the full width instead.
   const headedSections = sections.filter((section) => section.group).length
-  const referenceSpan = attributes.length + headedSections - (sections[0]?.group ? 1 : 0)
-  let rowIndex = -1
+  const pictureRows = attributes.filter((attribute) => attribute.pictures).length
+  const referenceSpan =
+    attributes.length + pictureRows + headedSections - (sections[0]?.group ? 1 : 0)
+  // The comparison cells go on whichever body row comes first, a picture row included.
+  let referencePlaced = false
+  const referenceCells = () => {
+    if (referencePlaced) return null
+    referencePlaced = true
+    return referenceColumns.map((column) => (
+      <td
+        key={column.key}
+        rowSpan={referenceSpan}
+        className="border-l border-border p-3 text-center align-middle whitespace-pre-line text-muted-foreground"
+      >
+        {pickText(column.text, lang)}
+      </td>
+    ))
+  }
 
   return (
     <div className="overflow-x-auto rounded-xl border border-border">
@@ -517,32 +624,40 @@ function ProfileTable({ question, scenario, lang, attributeHeader }: ProfileTabl
               span={sectionIndex === 0 ? referenceColumns.length + 2 : 2}
             >
               {section.attributes.map((attribute) => {
-                rowIndex += 1
+                const level = card
+                  ? (scenario.levels[columnKey(question, attribute.key, card.key)] ?? '')
+                  : ''
                 return (
-                  <tr key={attribute.key} className="border-b border-border last:border-b-0">
-                    <th scope="row" className="p-3 text-left font-medium">
-                      {attributeName(attribute, lang)}
-                    </th>
-                    <td className="border-l border-border p-3 text-center whitespace-pre-line">
-                      {card
-                        ? levelLabel(
-                            question,
-                            scenario.levels[columnKey(question, attribute.key, card.key)] ?? '',
-                            lang,
-                          )
-                        : ''}
-                    </td>
-                    {rowIndex === 0 &&
-                      referenceColumns.map((column) => (
-                        <td
-                          key={column.key}
-                          rowSpan={referenceSpan}
-                          className="border-l border-border p-3 text-center align-middle whitespace-pre-line text-muted-foreground"
-                        >
-                          {pickText(column.text, lang)}
+                  <Fragment key={attribute.key}>
+                    {attribute.pictures && (
+                      <tr className="border-b border-border">
+                        <th scope="row" className="p-3 text-left font-medium">
+                          {pictureRowName(attribute, lang)}
+                        </th>
+                        <td className="border-l border-border p-2 text-center">
+                          {card && (
+                            <PictureCell
+                              question={question}
+                              attribute={attribute}
+                              alternative={card.key}
+                              level={level}
+                              lang={lang}
+                            />
+                          )}
                         </td>
-                      ))}
-                  </tr>
+                        {referenceCells()}
+                      </tr>
+                    )}
+                    <tr className="border-b border-border last:border-b-0">
+                      <th scope="row" className="p-3 text-left font-medium">
+                        {attributeName(attribute, lang)}
+                      </th>
+                      <td className="border-l border-border p-3 text-center whitespace-pre-line">
+                        {card ? levelLabel(question, level, lang) : ''}
+                      </td>
+                      {referenceCells()}
+                    </tr>
+                  </Fragment>
                 )
               })}
             </SectionRows>

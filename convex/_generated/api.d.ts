@@ -18,6 +18,7 @@ import type * as email from "../email.js";
 import type * as emailSettings from "../emailSettings.js";
 import type * as http from "../http.js";
 import type * as messages from "../messages.js";
+import type * as pictures from "../pictures.js";
 import type * as questionnaires from "../questionnaires.js";
 import type * as responseSummaries from "../responseSummaries.js";
 import type * as responses from "../responses.js";
@@ -43,6 +44,7 @@ declare const fullApi: ApiFromModules<{
   emailSettings: typeof emailSettings;
   http: typeof http;
   messages: typeof messages;
+  pictures: typeof pictures;
   questionnaires: typeof questionnaires;
   responseSummaries: typeof responseSummaries;
   responses: typeof responses;
