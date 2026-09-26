@@ -67,6 +67,9 @@ function AdminHeader() {
             <Link to="/admin/dashboard" className={NAV_LINK} activeProps={NAV_ACTIVE}>
               Dashboard
             </Link>
+            <Link to="/admin/responses" className={NAV_LINK} activeProps={NAV_ACTIVE}>
+              Responses
+            </Link>
           </div>
         )}
         <div className="flex items-center gap-3">

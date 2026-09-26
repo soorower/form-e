@@ -21,6 +21,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as SurveysIndexRouteImport } from './routes/surveys/index'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as AdminSignupRouteImport } from './routes/admin/signup'
+import { Route as AdminResponsesRouteImport } from './routes/admin/responses'
 import { Route as AdminLoginRouteImport } from './routes/admin/login'
 import { Route as AdminDashboardRouteImport } from './routes/admin/dashboard'
 import { Route as AdminCreateRouteImport } from './routes/admin/create'
@@ -92,6 +93,11 @@ const AdminIndexRoute = AdminIndexRouteImport.update({
 const AdminSignupRoute = AdminSignupRouteImport.update({
   id: '/signup',
   path: '/signup',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminResponsesRoute = AdminResponsesRouteImport.update({
+  id: '/responses',
+  path: '/responses',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminLoginRoute = AdminLoginRouteImport.update({
@@ -172,6 +178,7 @@ export interface FileRoutesByFullPath {
   '/admin/create': typeof AdminCreateRoute
   '/admin/dashboard': typeof AdminDashboardRoute
   '/admin/login': typeof AdminLoginRoute
+  '/admin/responses': typeof AdminResponsesRoute
   '/admin/signup': typeof AdminSignupRoute
   '/admin/': typeof AdminIndexRoute
   '/surveys/': typeof SurveysIndexRoute
@@ -197,6 +204,7 @@ export interface FileRoutesByTo {
   '/admin/create': typeof AdminCreateRoute
   '/admin/dashboard': typeof AdminDashboardRoute
   '/admin/login': typeof AdminLoginRoute
+  '/admin/responses': typeof AdminResponsesRoute
   '/admin/signup': typeof AdminSignupRoute
   '/admin': typeof AdminIndexRoute
   '/surveys': typeof SurveysIndexRoute
@@ -224,6 +232,7 @@ export interface FileRoutesById {
   '/admin/create': typeof AdminCreateRoute
   '/admin/dashboard': typeof AdminDashboardRoute
   '/admin/login': typeof AdminLoginRoute
+  '/admin/responses': typeof AdminResponsesRoute
   '/admin/signup': typeof AdminSignupRoute
   '/admin/': typeof AdminIndexRoute
   '/surveys/': typeof SurveysIndexRoute
@@ -252,6 +261,7 @@ export interface FileRouteTypes {
     | '/admin/create'
     | '/admin/dashboard'
     | '/admin/login'
+    | '/admin/responses'
     | '/admin/signup'
     | '/admin/'
     | '/surveys/'
@@ -277,6 +287,7 @@ export interface FileRouteTypes {
     | '/admin/create'
     | '/admin/dashboard'
     | '/admin/login'
+    | '/admin/responses'
     | '/admin/signup'
     | '/admin'
     | '/surveys'
@@ -303,6 +314,7 @@ export interface FileRouteTypes {
     | '/admin/create'
     | '/admin/dashboard'
     | '/admin/login'
+    | '/admin/responses'
     | '/admin/signup'
     | '/admin/'
     | '/surveys/'
@@ -420,6 +432,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminSignupRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/responses': {
+      id: '/admin/responses'
+      path: '/responses'
+      fullPath: '/admin/responses'
+      preLoaderRoute: typeof AdminResponsesRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/login': {
       id: '/admin/login'
       path: '/login'
@@ -511,6 +530,7 @@ interface AdminRouteChildren {
   AdminCreateRoute: typeof AdminCreateRoute
   AdminDashboardRoute: typeof AdminDashboardRoute
   AdminLoginRoute: typeof AdminLoginRoute
+  AdminResponsesRoute: typeof AdminResponsesRoute
   AdminSignupRoute: typeof AdminSignupRoute
   AdminIndexRoute: typeof AdminIndexRoute
   AdminSurveysIndexRoute: typeof AdminSurveysIndexRoute
@@ -524,6 +544,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminCreateRoute: AdminCreateRoute,
   AdminDashboardRoute: AdminDashboardRoute,
   AdminLoginRoute: AdminLoginRoute,
+  AdminResponsesRoute: AdminResponsesRoute,
   AdminSignupRoute: AdminSignupRoute,
   AdminIndexRoute: AdminIndexRoute,
   AdminSurveysIndexRoute: AdminSurveysIndexRoute,
