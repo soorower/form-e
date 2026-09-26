@@ -1,6 +1,6 @@
 import { OTHER_ANSWER, isChoiceExperimentAnswer, isTableAnswer, scenarioChoice } from './answers'
 import { columnKey } from './cards'
-import { pickText, questionNumbers } from './factory'
+import { pickText, questionNumbers, rankLimit } from './factory'
 import { activeRespondentFields, respondentColumn } from './respondent'
 import type {
   AnswerValue,
@@ -10,6 +10,7 @@ import type {
   Lang,
   Question,
   Questionnaire,
+  RankingQuestion,
   SurveyResponse,
 } from './types'
 
@@ -82,6 +83,31 @@ export function selectionColumnCount(
  */
 export function selectionColumn(heading: string, index: number): string {
   return `${heading} (${index + 1})`
+}
+
+/**
+ * Column heading for one priority of a priority-choice question:
+ * "4. Preferred modes (priority 1)", "(priority 2)", … The column holds the
+ * option tapped at that place, so priority 1 is always the first tap.
+ */
+export function priorityColumn(heading: string, index: number): string {
+  return `${heading} (priority ${index + 1})`
+}
+
+/**
+ * How many priority columns a priority-choice question takes: as many as it
+ * asks for, or more if an answer holds more (the limit lowered afterwards),
+ * so no recorded priority is dropped.
+ */
+export function priorityColumnCount(
+  question: RankingQuestion,
+  responses: Pick<SurveyResponse, 'answers'>[],
+): number {
+  let widest = Math.max(1, rankLimit(question))
+  for (const response of responses) {
+    widest = Math.max(widest, selectedIds(response.answers[question.id]).length)
+  }
+  return widest
 }
 
 /** English when the survey has it, since analysis scripts usually expect English headings. */
@@ -180,7 +206,9 @@ export function responsesToRows(
     questionnaire.questions.flatMap((question) =>
       question.type === 'multi_choice'
         ? [[question.id, selectionColumnCount(question, responses)] as const]
-        : [],
+        : question.type === 'ranking'
+          ? [[question.id, priorityColumnCount(question, responses)] as const]
+          : [],
     ),
   )
   const respondentFields = activeRespondentFields(questionnaire)
@@ -221,6 +249,17 @@ export function responsesToRows(
         for (let slot = 0; slot < width; slot += 1) {
           const id = chosen[slot]
           base[selectionColumn(heading, slot)] = id ? optionText(question, id, lang) : ''
+        }
+        return
+      }
+
+      if (question.type === 'ranking') {
+        // Kept in the order tapped: (priority 1) is the first option chosen.
+        const ranked = selectedIds(value)
+        const width = selectionWidths.get(question.id) ?? 1
+        for (let slot = 0; slot < width; slot += 1) {
+          const id = ranked[slot]
+          base[priorityColumn(heading, slot)] = id ? optionText(question, id, lang) : ''
         }
         return
       }

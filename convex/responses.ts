@@ -3,7 +3,6 @@ import { paginationOptsValidator } from 'convex/server'
 import { mutation, query, type MutationCtx, type QueryCtx } from './_generated/server'
 import {
   CARD_RESERVATION_MS,
-  nextPlanRow,
   pickLeastUsed,
   tallyPlanRow,
   tallySets,
@@ -11,6 +10,7 @@ import {
   type CardCounts,
 } from './cardBalance'
 import { recordSummary } from './responseSummaries'
+import { pickSerial, planRowForSerial, type SerialRange } from './serials'
 import {
   canAccess,
   canView,
@@ -18,7 +18,9 @@ import {
   isApproved,
   questionnaireByAppId,
   requireBuilder,
+  trustedEmail,
   viewerAccess,
+  type Access,
   visibleQuestionnaires,
 } from './access'
 import { lang, respondentDetails } from './validators'
@@ -53,15 +55,72 @@ function formatSurveyNumber(prefix: string, serial: number): string {
 }
 
 async function highestSerial(
-  ctx: { db: any },
+  ctx: QueryCtx | MutationCtx,
   questionnaireId: string,
 ): Promise<number> {
   const last = await ctx.db
     .query('responses')
-    .withIndex('by_serial', (q: any) => q.eq('questionnaireId', questionnaireId))
+    .withIndex('by_serial', (q) => q.eq('questionnaireId', questionnaireId))
     .order('desc')
     .first()
   return last?.serial ?? 0
+}
+
+/** The survey-number ranges the admin handed out on one survey, with whose they are. */
+async function surveyRanges(
+  ctx: QueryCtx | MutationCtx,
+  questionnaireId: string,
+): Promise<(SerialRange & { email: string })[]> {
+  const assignments = await ctx.db
+    .query('assignments')
+    .withIndex('by_questionnaire', (q) => q.eq('questionnaireId', questionnaireId))
+    .collect()
+  return assignments.flatMap((assignment) =>
+    assignment.rangeStart !== undefined && assignment.rangeEnd !== undefined
+      ? [{ email: assignment.email, start: assignment.rangeStart, end: assignment.rangeEnd }]
+      : [],
+  )
+}
+
+/**
+ * The next survey number for this caller: the lowest free one in their own
+ * range, or one past the highest number outside every range (see
+ * `pickSerial`). Numbers held by interviews going on now count as taken, so
+ * two tablets starting together are never given the same number; `except`
+ * leaves out the caller's own interview.
+ */
+async function nextFreeSerial(
+  ctx: QueryCtx | MutationCtx,
+  questionnaireId: string,
+  access: Access | null,
+  now: number,
+  except?: string,
+): Promise<number> {
+  const ranges = await surveyRanges(ctx, questionnaireId)
+  const taken = new Set<number>()
+  if (ranges.length === 0) {
+    // Only the highest matters then, and the index gives it in one read.
+    taken.add(await highestSerial(ctx, questionnaireId))
+  } else {
+    const summaries = await ctx.db
+      .query('responseSummaries')
+      .withIndex('by_questionnaire', (q) => q.eq('questionnaireId', questionnaireId))
+      .collect()
+    for (const summary of summaries) taken.add(summary.serial)
+  }
+  const draws = await ctx.db
+    .query('cardDraws')
+    .withIndex('by_questionnaire', (q) => q.eq('questionnaireId', questionnaireId))
+    .collect()
+  for (const draw of draws) {
+    if (draw.serial === undefined || draw.responseId === except) continue
+    if (now - draw.drawnAt > CARD_RESERVATION_MS) continue
+    taken.add(draw.serial)
+  }
+  taken.delete(0)
+  const email = access && isApproved(access) ? trustedEmail(access.user) : ''
+  const own = email ? ranges.find((range) => range.email === email) : undefined
+  return pickSerial(taken, ranges, own)
 }
 
 /**
@@ -177,11 +236,16 @@ export const progress = query({
   },
 })
 
-/** The number the next response on this survey will get, shown before submitting. */
+/**
+ * The number the next response on this survey will get, shown before
+ * submitting: for a surveyor with a range of their own, the next free number
+ * in it. A prediction: `drawCards` holds the actual number when the survey
+ * hands out cards, and `submit` otherwise decides it.
+ */
 export const nextSerial = query({
   args: { questionnaireId: v.string() },
   handler: async (ctx, { questionnaireId }) =>
-    (await highestSerial(ctx, questionnaireId)) + 1,
+    nextFreeSerial(ctx, questionnaireId, await viewerAccess(ctx), Date.now()),
 })
 
 /**
@@ -207,6 +271,13 @@ export const submit = mutation({
       .query('responses')
       .withIndex('by_app_id', (q) => q.eq('id', args.id))
       .unique()
+    // The number drawCards held for this interview, if it held one.
+    const held = (
+      await ctx.db
+        .query('cardDraws')
+        .withIndex('by_response', (q) => q.eq('responseId', args.id))
+        .collect()
+    ).find((draw) => draw.serial !== undefined)?.serial
     // The cards this interview reserved now count through the response itself.
     await deleteDrawsFor(ctx, args.id)
     if (duplicate) return { serial: duplicate.serial, surveyNumber: duplicate.surveyNumber }
@@ -226,13 +297,27 @@ export const submit = mutation({
       throw new ConvexError('The answers are too large to store.')
     }
     const now = Date.now()
-    const serial = (await highestSerial(ctx, args.questionnaireId)) + 1
+    const access = await viewerAccess(ctx)
+    // The number held when the cards were handed out, which a planned block's
+    // row was picked by. It can only have gone to someone else if the
+    // interview outlasted its reservation; then the next free one is used.
+    const heldFree =
+      held !== undefined &&
+      (await ctx.db
+        .query('responses')
+        .withIndex('by_serial', (q) =>
+          q.eq('questionnaireId', args.questionnaireId).eq('serial', held),
+        )
+        .first()) === null
+    const serial =
+      heldFree && held !== undefined
+        ? held
+        : await nextFreeSerial(ctx, args.questionnaireId, access, now, args.id)
     const surveyNumber = formatSurveyNumber(questionnaire.surveyCodePrefix, serial)
 
     // A signed-in, approved account is stamped onto the response. A
     // surveyor's responses always carry their own name, whatever the tablet
     // sent, so the leaderboard cannot be gamed by typing another name.
-    const access = await viewerAccess(ctx)
     const signedIn = access && isApproved(access) ? access : null
     const enumerator =
       signedIn?.role === 'surveyor'
@@ -320,7 +405,12 @@ export const drawCards = mutation({
       .withIndex('by_response', (q) => q.eq('responseId', responseId))
       .collect()
     if (held.length > 0) {
-      return held.map(({ questionId, sets, planRow }) => ({ questionId, sets, planRow }))
+      return held.map(({ questionId, sets, planRow, serial }) => ({
+        questionId,
+        sets,
+        planRow,
+        serial,
+      }))
     }
 
     const questionnaire = await questionnaireByAppId(ctx, questionnaireId)
@@ -332,26 +422,38 @@ export const drawCards = mutation({
     if (blocks.length === 0) return []
 
     const now = Date.now()
-    const { shown, reserved, planShown, planReserved, expired } = await cardUsage(
+    const { shown, reserved, expired } = await cardUsage(
       ctx,
       questionnaireId,
       now,
     )
     for (const draw of expired) await ctx.db.delete(draw._id)
 
+    // The interview's survey number is held now, not at submit, because a
+    // planned block's row follows it.
+    const serial = await nextFreeSerial(
+      ctx,
+      questionnaireId,
+      await viewerAccess(ctx),
+      now,
+      responseId,
+    )
+
     // One plan row for the whole interview, so every planned block shows that
     // same row of the creator's sheet: with three blocks of three, row 7 gives
-    // block 1 its columns 1-3, block 2 its 4-6 and block 3 its 7-9. The rows
-    // are numbered alike in every block, so usage is counted once, off the
-    // first planned block.
+    // block 1 its columns 1-3, block 2 its 4-6 and block 3 its 7-9. The row
+    // follows the survey number (number 1 -> row 1, and round again after the
+    // last row: a 50-row plan run to 500 respondents is the plan ten times
+    // over), so a surveyor given numbers 101-200 gets the same rows as the
+    // paper forms printed for them.
     const planned = blocks.filter(
       (block) => block.drawMode === 'plan' && (block.scenarioPlan?.length ?? 0) > 0,
     )
     const sharedRow =
       planned.length > 0
-        ? nextPlanRow(
+        ? planRowForSerial(
             planned[0].scenarioPlan!.map((entry) => entry.row),
-            combined(planned[0].id, planShown, planReserved),
+            serial,
           )
         : undefined
 
@@ -381,9 +483,10 @@ export const drawCards = mutation({
         questionId: block.id,
         sets,
         ...(planRow === undefined ? {} : { planRow }),
+        serial,
         drawnAt: now,
       })
-      drawn.push({ questionId: block.id, sets, planRow })
+      drawn.push({ questionId: block.id, sets, planRow, serial })
     }
     return drawn
   },

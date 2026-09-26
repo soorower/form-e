@@ -229,6 +229,38 @@ function TypeEditor({ question, languages, onChange }: TypeEditorProps) {
           languages={languages}
         />
       )
+    case 'ranking':
+      return (
+        <div className="space-y-4">
+          <OptionsEditor
+            options={question.options}
+            onChange={(options) => onChange({ ...question, options })}
+            languages={languages}
+          />
+          <div className="space-y-2">
+            <Label htmlFor={`ranks-${question.id}`}>How many priorities to ask for</Label>
+            <Input
+              id={`ranks-${question.id}`}
+              type="number"
+              min={0}
+              max={question.options.length}
+              value={question.maxRanks || ''}
+              placeholder={`All ${question.options.length}`}
+              onChange={(event) =>
+                onChange({
+                  ...question,
+                  maxRanks: Math.max(0, Math.floor(Number(event.target.value) || 0)),
+                })
+              }
+              className="max-w-40"
+            />
+            <p className="text-sm text-muted-foreground">
+              Leave blank to rank every option. The order the respondent taps is saved: the
+              first tap is priority 1, and the export gives each priority its own column.
+            </p>
+          </div>
+        </div>
+      )
     case 'table':
       return (
         <TableEditor

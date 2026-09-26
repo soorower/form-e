@@ -1,14 +1,21 @@
 import { asciiDigits } from '#/lib/questionnaire/answers'
 import type { ReactNode } from 'react'
+import { Button } from '#/components/ui/button'
 import { Checkbox } from '#/components/ui/checkbox'
 import { Input } from '#/components/ui/input'
 import { Label } from '#/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '#/components/ui/radio-group'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '#/components/ui/select'
 import { Textarea } from '#/components/ui/textarea'
-import { formatNumber, pickText } from '#/lib/questionnaire/factory'
+import { formatNumber, pickText, rankLimit } from '#/lib/questionnaire/factory'
 import { FORM_TEXT_DEFAULTS, localizedStyleClass } from '#/lib/questionnaire/text-style'
-import type { AnswerValue, ChoiceQuestion, Lang, Question } from '#/lib/questionnaire/types'
+import type {
+  AnswerValue,
+  ChoiceQuestion,
+  Lang,
+  Question,
+  RankingQuestion,
+} from '#/lib/questionnaire/types'
 import { cn } from '#/lib/utils'
 import type { CardExposure } from '#/lib/questionnaire/cards'
 import { ChoiceExperimentField } from './ChoiceExperimentField'
@@ -42,7 +49,7 @@ export function questionDomId(id: string) {
   return `question-${id}`
 }
 
-const GROUP_TYPES = new Set<Question['type']>(['single_choice', 'multi_choice', 'table'])
+const GROUP_TYPES = new Set<Question['type']>(['single_choice', 'multi_choice', 'ranking', 'table'])
 
 export function QuestionField({
   question,
@@ -242,6 +249,16 @@ function Control({ question, lang, value, onChange, inputId, labelId }: ControlP
         </div>
       )
     }
+    case 'ranking':
+      return (
+        <RankingControl
+          question={question}
+          lang={lang}
+          value={asList(value)}
+          onChange={onChange}
+          labelId={labelId}
+        />
+      )
     case 'dropdown':
       return (
         <DropdownControl
@@ -265,6 +282,76 @@ function ChoiceRow({ text, children }: { text: string; children: ReactNode }) {
       {children}
       <span>{text || '—'}</span>
     </Label>
+  )
+}
+
+interface RankingControlProps {
+  question: RankingQuestion
+  lang: Lang
+  value: string[]
+  onChange: (value: AnswerValue) => void
+  labelId: string
+}
+
+/**
+ * Options tapped in order of preference. The first tap is priority 1, the
+ * next priority 2; tapping a ranked option takes it out and moves the ones
+ * after it up, so the order always reads 1, 2, 3 without gaps.
+ */
+function RankingControl({ question, lang, value, onChange, labelId }: RankingControlProps) {
+  const limit = rankLimit(question)
+  const full = value.length >= limit
+  const bn = lang === 'bn'
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-muted-foreground">
+        {bn
+          ? `পছন্দের ক্রমানুসারে ট্যাপ করুন (সর্বোচ্চ ${formatNumber(limit, lang)}টি)। প্রথম ট্যাপ = অগ্রাধিকার ১।`
+          : `Tap in order of preference (up to ${limit}). The first tap is priority 1.`}
+      </p>
+      <div role="group" aria-labelledby={labelId} className="grid gap-2">
+        {question.options.map((option) => {
+          const rank = value.indexOf(option.id)
+          const ranked = rank >= 0
+          return (
+            <button
+              key={option.id}
+              type="button"
+              aria-pressed={ranked}
+              disabled={!ranked && full}
+              onClick={() =>
+                onChange(ranked ? value.filter((id) => id !== option.id) : [...value, option.id])
+              }
+              className={cn(
+                'flex min-h-12 items-center gap-3 rounded-xl border px-4 text-left text-base transition-colors disabled:cursor-not-allowed disabled:opacity-50',
+                ranked ? 'border-primary bg-primary/5' : 'border-border',
+              )}
+            >
+              <span
+                className={cn(
+                  'flex size-7 shrink-0 items-center justify-center rounded-full border text-sm font-semibold tabular-nums',
+                  ranked ? 'border-primary bg-primary text-primary-foreground' : 'border-border',
+                )}
+                aria-hidden
+              >
+                {ranked ? formatNumber(rank + 1, lang) : ''}
+              </span>
+              <span className="flex-1">{pickText(option.label, lang) || '—'}</span>
+              {ranked && (
+                <span className="text-sm text-muted-foreground">
+                  {bn ? `অগ্রাধিকার ${formatNumber(rank + 1, lang)}` : `Priority ${rank + 1}`}
+                </span>
+              )}
+            </button>
+          )
+        })}
+      </div>
+      {value.length > 0 && (
+        <Button type="button" variant="ghost" size="sm" onClick={() => onChange([])}>
+          {bn ? 'আবার শুরু করুন' : 'Clear and start again'}
+        </Button>
+      )}
+    </div>
   )
 }
 

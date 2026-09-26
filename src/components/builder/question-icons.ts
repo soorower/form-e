@@ -5,6 +5,7 @@ import {
   CircleDot,
   Clock,
   FileText,
+  ListOrdered,
   Hash,
   SquareCheck,
   Table2,
@@ -22,6 +23,7 @@ export const QUESTION_ICONS: Record<QuestionType, LucideIcon> = {
   single_choice: CircleDot,
   multi_choice: SquareCheck,
   dropdown: ChevronDown,
+  ranking: ListOrdered,
   table: Table2,
   choice_experiment: Columns3,
 }

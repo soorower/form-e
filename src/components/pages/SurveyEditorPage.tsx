@@ -1,7 +1,7 @@
 import { Link } from '@tanstack/react-router'
 import { useState } from 'react'
 import { useQuery } from 'convex/react'
-import { ArrowLeft, Eye, Inbox, MessageSquare, Pencil, Users } from 'lucide-react'
+import { ArrowLeft, Eye, Inbox, MessageSquare, Pencil, Printer, Users } from 'lucide-react'
 import { api } from '../../../convex/_generated/api'
 import { useSurveyPaths } from '#/components/auth/area'
 import { QuestionnaireBuilder } from '#/components/builder/QuestionnaireBuilder'
@@ -92,6 +92,14 @@ export function SurveyEditorPage({ surveyId }: { surveyId: string }) {
         >
           <MessageSquare data-icon="inline-start" />
           Chat
+        </Button>
+        <Button
+          variant="outline"
+          nativeButton={false}
+          render={<Link to={paths.print} params={{ surveyId }} search={{}} />}
+        >
+          <Printer data-icon="inline-start" />
+          Paper forms
         </Button>
         <Button
           variant="outline"

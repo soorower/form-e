@@ -162,13 +162,18 @@ export function SurveyCardPlan({
                 'Each new interview is handed the cards used least so far, counted across all tablets. The most-used and the least-used card never differ by more than one showing.'}
               {mode === 'random' && 'Cards are drawn at random, so some come up more often than others.'}
               {usesPlan &&
-                'Nothing is drawn: your sheet decides. Each interview is given the lowest-numbered row not yet used, so response 1 answers row 1, response 2 row 2, and so on.'}
+                'Nothing is drawn: your sheet decides. The row follows the survey number: number 1 answers row 1, number 2 row 2, and after the last row it starts again at row 1, so the plan repeats until the target is reached. A surveyor given numbers 101–200 gets the rows for those numbers, the same ones printed on their paper forms.'}
             </p>
           </div>
         </div>
 
         {usesPlan && (
-          <ScenarioPlan blocks={blocks} onBlockChange={onBlockChange} onPlanSplit={onPlanSplit} />
+          <ScenarioPlan
+            blocks={blocks}
+            responseTarget={responseTarget}
+            onBlockChange={onBlockChange}
+            onPlanSplit={onPlanSplit}
+          />
         )}
 
         <BlockTable
@@ -183,6 +188,25 @@ export function SurveyCardPlan({
       </CardContent>
     </Card>
   )
+}
+
+/**
+ * How the plan covers the target: one row per respondent when it has as
+ * many rows as the target (500 rows for 500 respondents, nothing repeats),
+ * otherwise "50 rows × 10 = 500 respondents", with any part-round spelled out.
+ */
+export function planRepeats(rows: number, target: number): string {
+  if (rows >= target) {
+    return `${count(rows, 'row', 'rows')} cover the target of ${target}: survey number 1 answers row 1, number 2 row 2, and so on. Nothing repeats.`
+  }
+  const rounds = Math.floor(target / rows)
+  const rest = target % rows
+  const base = `${count(rows, 'row', 'rows')} × ${rounds} = ${rows * rounds} respondents`
+  const tail =
+    rest === 0
+      ? ''
+      : `, then rows 1–${rest} once more for the last ${count(rest, 'respondent', 'respondents')}`
+  return `The plan repeats to reach the target of ${target}: ${base}${tail}. Survey numbers 1, ${rows + 1}, ${2 * rows + 1}, … all take row 1.`
 }
 
 /** One row per choice block: its cards, how many scenarios it asks, its share of the plan. */
@@ -270,10 +294,12 @@ function BlockTable({
  */
 function ScenarioPlan({
   blocks,
+  responseTarget,
   onBlockChange,
   onPlanSplit,
 }: {
   blocks: ChoiceExperimentQuestion[]
+  responseTarget: number
   onBlockChange: (id: string, patch: Partial<ChoiceExperimentQuestion>) => void
   onPlanSplit: (byBlock: Map<string, ScenarioPlanRow[]>) => void
 }) {
@@ -382,6 +408,9 @@ function ScenarioPlan({
         <Label className="text-sm">Scenario plan — one sheet for the whole interview</Label>
         {rows.length > 0 && <Badge variant="secondary">{count(rows.length, 'row', 'rows')}</Badge>}
       </div>
+      {rows.length > 0 && responseTarget > 0 && (
+        <p className="text-sm">{planRepeats(rows.length, responseTarget)}</p>
+      )}
 
       {showImport ? (
         <div className="space-y-2">

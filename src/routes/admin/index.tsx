@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { useEffect, useState, type FormEvent, type KeyboardEvent } from 'react'
+import { Fragment, useEffect, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { useMutation, useQuery } from 'convex/react'
 import type { FunctionReturnType } from 'convex/server'
 import { ConvexError } from 'convex/values'
@@ -7,6 +7,7 @@ import {
   AlertTriangle,
   Check,
   ClipboardList,
+  Hash,
   Hourglass,
   Pencil,
   Plus,
@@ -18,6 +19,7 @@ import {
 } from 'lucide-react'
 import { api } from '../../../convex/_generated/api'
 import { RequireAuth } from '#/components/auth/RequireAuth'
+import { SurveyNumberRanges } from '#/components/team/SurveyNumberRanges'
 import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '#/components/ui/card'
@@ -907,6 +909,8 @@ function SurveysTab({
   const assignSurveyor = useMutation(api.teams.assign)
   const unassignSurveyor = useMutation(api.teams.unassign)
   const { error, run } = useAction()
+  // The survey whose survey-number blocks are open below its row.
+  const [numbersFor, setNumbersFor] = useState<string | null>(null)
   const surveyorAccounts = users.filter(
     (person) => person.role === 'surveyor' && person.status === 'approved' && person.email,
   )
@@ -960,8 +964,10 @@ function SurveysTab({
               <TableBody>
                 {surveys.map((survey) => {
                   const title = pickText(survey.title, survey.defaultLanguage) || 'Untitled survey'
+                  const numbersOpen = numbersFor === survey.id
                   return (
-                    <TableRow key={survey.id}>
+                    <Fragment key={survey.id}>
+                    <TableRow>
                       <TableCell>
                         <p lang={survey.defaultLanguage} className="font-medium">
                           {title}
@@ -1050,6 +1056,11 @@ function SurveysTab({
                                   {surveyor.code}
                                 </span>
                               )}
+                              {surveyor.range && (
+                                <span className="text-[10px] tabular-nums opacity-70">
+                                  {surveyor.range.start}–{surveyor.range.end}
+                                </span>
+                              )}
                               <button
                                 type="button"
                                 aria-label={`Remove ${surveyor.name} from ${title}`}
@@ -1118,17 +1129,39 @@ function SurveysTab({
                       </TableCell>
                       <TableCell className="text-right tabular-nums">{survey.responseCount}</TableCell>
                       <TableCell className="text-right">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          nativeButton={false}
-                          render={<Link to="/admin/surveys/$surveyId" params={{ surveyId: survey.id }} />}
-                        >
-                          <Pencil data-icon="inline-start" />
-                          Edit
-                        </Button>
+                        <div className="flex justify-end gap-1">
+                          <Button
+                            variant={numbersOpen ? 'secondary' : 'ghost'}
+                            size="sm"
+                            aria-expanded={numbersOpen}
+                            onClick={() => setNumbersFor(numbersOpen ? null : survey.id)}
+                          >
+                            <Hash data-icon="inline-start" />
+                            Numbers
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            nativeButton={false}
+                            render={<Link to="/admin/surveys/$surveyId" params={{ surveyId: survey.id }} />}
+                          >
+                            <Pencil data-icon="inline-start" />
+                            Edit
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
+                    {numbersOpen && (
+                      <TableRow className="hover:bg-transparent">
+                        <TableCell colSpan={8} className="bg-muted/30 whitespace-normal">
+                          <SurveyNumberRanges
+                            questionnaireId={survey.id}
+                            prefix={survey.surveyCodePrefix}
+                          />
+                        </TableCell>
+                      </TableRow>
+                    )}
+                    </Fragment>
                   )
                 })}
               </TableBody>

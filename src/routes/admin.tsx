@@ -46,7 +46,7 @@ function AdminLayout() {
 function AdminHeader() {
   const { isAdmin } = useViewer()
   return (
-    <header className="sticky top-0 z-50 border-b border-border bg-background/80 px-4 backdrop-blur-xl">
+    <header className="print:hidden sticky top-0 z-50 border-b border-border bg-background/80 px-4 backdrop-blur-xl">
       <nav className="page-wrap-wide flex items-center justify-between py-3">
         <Link to="/admin" className="flex items-center gap-3 no-underline">
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-foreground text-background">

@@ -11,8 +11,10 @@ import {
   questionnaireByAppId,
   requireApproved,
   roleOf,
+  trustedEmail,
   viewerAccess,
 } from './access'
+import { rangeProblem, rangesOverlap } from './serials'
 
 /**
  * Surveyor assignment: which approved surveyor accounts work on a survey.
@@ -67,6 +69,10 @@ export const members = query({
         name: user ? displayName(user) : assignment.email,
         code: user?.surveyorCode ?? null,
         signedUp: user !== null,
+        range:
+          assignment.rangeStart !== undefined && assignment.rangeEnd !== undefined
+            ? { start: assignment.rangeStart, end: assignment.rangeEnd }
+            : null,
       })
     }
     return rows.sort((a, b) => (a.code ?? '').localeCompare(b.code ?? '') || a.name.localeCompare(b.name))
@@ -112,5 +118,75 @@ export const unassign = mutation({
       .filter((q) => q.eq(q.field('email'), address))
       .collect()
     for (const row of rows) await ctx.db.delete(row._id)
+  },
+})
+
+/**
+ * Gives a surveyor on a survey a block of survey numbers (Ikra 1–100,
+ * Sorower 101–200), or takes it away with `range: null`. Their interviews
+ * then take the lowest free number in it, and their paper forms are printed
+ * for it. Blocks on one survey may not overlap; numbers already recorded
+ * inside a new block simply stay taken.
+ */
+export const setRange = mutation({
+  args: {
+    questionnaireId: v.string(),
+    email: v.string(),
+    range: v.union(v.null(), v.object({ start: v.number(), end: v.number() })),
+  },
+  handler: async (ctx, { questionnaireId, email, range }) => {
+    const access = await requireApproved(ctx)
+    const questionnaire = await questionnaireByAppId(ctx, questionnaireId)
+    if (!questionnaire) throw new ConvexError('That survey no longer exists.')
+    assertAccess(access, questionnaire)
+    const address = normalizeEmail(email)
+    const assignments = await ctx.db
+      .query('assignments')
+      .withIndex('by_questionnaire', (q) => q.eq('questionnaireId', questionnaireId))
+      .collect()
+    const mine = assignments.find((assignment) => assignment.email === address)
+    if (!mine) throw new ConvexError('Assign this surveyor to the survey first.')
+    if (range === null) {
+      await ctx.db.patch(mine._id, { rangeStart: undefined, rangeEnd: undefined })
+      return
+    }
+    const problem = rangeProblem(range)
+    if (problem) throw new ConvexError(problem)
+    for (const other of assignments) {
+      if (other._id === mine._id || other.rangeStart === undefined || other.rangeEnd === undefined) {
+        continue
+      }
+      if (rangesOverlap(range, { start: other.rangeStart, end: other.rangeEnd })) {
+        throw new ConvexError(
+          `Numbers ${other.rangeStart}–${other.rangeEnd} already belong to ${other.email}.`,
+        )
+      }
+    }
+    await ctx.db.patch(mine._id, { rangeStart: range.start, rangeEnd: range.end })
+  },
+})
+
+/** The caller's own survey-number ranges, by survey: what a surveyor's paper forms are printed for. */
+export const myRanges = query({
+  args: {},
+  handler: async (ctx) => {
+    const access = await viewerAccess(ctx)
+    const email = access && isApproved(access) ? trustedEmail(access.user) : ''
+    if (!email) return []
+    const assignments = await ctx.db
+      .query('assignments')
+      .withIndex('by_email', (q) => q.eq('email', email))
+      .collect()
+    return assignments.flatMap((assignment) =>
+      assignment.rangeStart !== undefined && assignment.rangeEnd !== undefined
+        ? [
+            {
+              questionnaireId: assignment.questionnaireId,
+              start: assignment.rangeStart,
+              end: assignment.rangeEnd,
+            },
+          ]
+        : [],
+    )
   },
 })

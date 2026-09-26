@@ -520,3 +520,48 @@ describe('CSV cells a spreadsheet would run as formulas', () => {
     ])
   })
 })
+
+describe('priority choice export', () => {
+  function withPriority(maxRanks = 0): Questionnaire {
+    const ranked = createQuestion('ranking')
+    if (ranked.type !== 'ranking') throw new Error('expected priority choice')
+    ranked.id = 'pref'
+    ranked.label = { en: 'Preferred modes', bn: '' }
+    ranked.maxRanks = maxRanks
+    ranked.options = [
+      { id: 'a', label: { en: 'Bus', bn: '' } },
+      { id: 'b', label: { en: 'Train', bn: '' } },
+      { id: 'c', label: { en: 'Launch', bn: '' } },
+      { id: 'd', label: { en: 'Air', bn: '' } },
+    ]
+    return { ...createQuestionnaire(), questions: [ranked] }
+  }
+
+  const ranked = (pref: string[]): SurveyResponse => ({
+    id: 'r1',
+    questionnaireId: 'q',
+    serial: 1,
+    surveyNumber: 'P-001',
+    enumerator: 'Ikra',
+    language: 'en',
+    submittedAt: Date.UTC(2026, 8, 10),
+    answers: { pref },
+  })
+
+  it('keeps the tapping order: the first option tapped is priority 1', () => {
+    const rows = responsesToRows(withPriority(), [ranked(['c', 'd'])])
+    expect(rows[0]['1. Preferred modes (priority 1)']).toBe('Launch')
+    expect(rows[0]['1. Preferred modes (priority 2)']).toBe('Air')
+    expect(rows[0]['1. Preferred modes (priority 3)']).toBe('')
+    expect(rows[0]['1. Preferred modes (priority 4)']).toBe('')
+  })
+
+  it('makes one column per priority asked for', () => {
+    const questionnaire = withPriority(2)
+    const rows = responsesToRows(questionnaire, [ranked(['b'])])
+    expect(exportColumns(questionnaire, rows).filter((column) => column.includes('priority'))).toEqual([
+      '1. Preferred modes (priority 1)',
+      '1. Preferred modes (priority 2)',
+    ])
+  })
+})

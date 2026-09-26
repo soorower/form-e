@@ -9,7 +9,7 @@ import type {
   ScenarioPlanRow,
 } from '#/lib/questionnaire/types'
 import { QuestionnaireBuilder } from './QuestionnaireBuilder'
-import { SurveyCardPlan } from './SurveyCardPlan'
+import { planRepeats, SurveyCardPlan } from './SurveyCardPlan'
 
 const mocks = vi.hoisted(() => ({
   exposure: { cards: [] as unknown[], planRows: [] as unknown[] },
@@ -154,5 +154,17 @@ describe('the builder behind the panel', () => {
     renderBuilder(three())
     expect(screen.getAllByText('Card distribution')).toHaveLength(1)
     expect(screen.getAllByLabelText('1. Total survey target')).toHaveLength(1)
+  })
+})
+
+describe('planRepeats', () => {
+  it('does not repeat a plan with a row for every respondent', () => {
+    expect(planRepeats(500, 500)).toMatch(/Nothing repeats/)
+    expect(planRepeats(500, 300)).toMatch(/Nothing repeats/)
+  })
+
+  it('repeats a shorter plan to reach the target', () => {
+    expect(planRepeats(50, 500)).toMatch(/50 rows × 10 = 500 respondents/)
+    expect(planRepeats(50, 520)).toMatch(/rows 1–20 once more/)
   })
 })

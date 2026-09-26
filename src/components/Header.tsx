@@ -16,7 +16,7 @@ export default function Header() {
   // consistent.
   const { isAuthenticated, isAdmin, isSurveyor } = useViewer()
   return (
-    <header className="sticky top-0 z-50 border-b border-white/10 bg-background/80 px-4 backdrop-blur-xl transition-all duration-300">
+    <header className="print:hidden sticky top-0 z-50 border-b border-white/10 bg-background/80 px-4 backdrop-blur-xl transition-all duration-300">
       <nav className="page-wrap flex items-center justify-between py-4">
         <div className="flex items-center gap-8">
           <Link

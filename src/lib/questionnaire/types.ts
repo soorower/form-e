@@ -30,6 +30,7 @@ export type QuestionType =
   | 'single_choice'
   | 'multi_choice'
   | 'dropdown'
+  | 'ranking'
   | 'table'
   | 'choice_experiment'
 
@@ -74,6 +75,20 @@ export interface DateTimeQuestion extends QuestionBase {
 export interface ChoiceQuestion extends QuestionBase {
   type: 'single_choice' | 'multi_choice' | 'dropdown'
   options: Option[]
+}
+
+/**
+ * "Priority choice": the respondent taps options in order of preference, and
+ * the order of the taps is the answer — the option tapped first is priority 1,
+ * the next priority 2, and so on. Stored as the option ids in that order, and
+ * exported one column per priority. Kept apart from multiple choice, whose
+ * selections have no order (and export in the question's option order).
+ */
+export interface RankingQuestion extends QuestionBase {
+  type: 'ranking'
+  options: Option[]
+  /** How many priorities to ask for; 0 lets the respondent rank every option. */
+  maxRanks: number
 }
 
 export interface TableQuestion extends QuestionBase {
@@ -237,6 +252,7 @@ export type Question =
   | NumberQuestion
   | DateTimeQuestion
   | ChoiceQuestion
+  | RankingQuestion
   | TableQuestion
   | ChoiceExperimentQuestion
 

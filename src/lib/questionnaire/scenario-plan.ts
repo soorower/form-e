@@ -258,6 +258,25 @@ export function leastUsedPlanRow(
   return best?.row ?? 0
 }
 
+/**
+ * The plan row that goes with a survey number: the rows in order, round again
+ * after the last, so a 50-row plan run to 500 respondents is the plan ten
+ * times over (numbers 1, 51, 101, … all take row 1). The server holds each
+ * interview's number when it hands out the row (`responses.drawCards`), and
+ * paper forms are printed by the same rule, so the form printed for number 37
+ * shows the cards a tablet would. Mirrors `planRowForSerial` in
+ * convex/serials.ts. 0 when the block has no plan.
+ */
+export function planRowForSerial(
+  question: Pick<ChoiceExperimentQuestion, 'scenarioPlan'>,
+  serial: number,
+): number {
+  const ordered = [...new Set(planRows(question).map((entry) => entry.row))].sort((a, b) => a - b)
+  if (ordered.length === 0) return 0
+  const index = (Math.max(1, Math.floor(serial)) - 1) % ordered.length
+  return ordered[index]
+}
+
 export interface PlanCheck {
   rows: number
   /** Card showings the plan hands out in all: every row's cards added up. */

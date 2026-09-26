@@ -26,9 +26,11 @@ import { Route as AdminDashboardRouteImport } from './routes/admin/dashboard'
 import { Route as AdminCreateRouteImport } from './routes/admin/create'
 import { Route as SurveysSurveyIdIndexRouteImport } from './routes/surveys/$surveyId.index'
 import { Route as AdminSurveysIndexRouteImport } from './routes/admin/surveys/index'
+import { Route as SurveysSurveyIdPrintRouteImport } from './routes/surveys/$surveyId.print'
 import { Route as SurveysSurveyIdFillRouteImport } from './routes/surveys/$surveyId.fill'
 import { Route as SurveysSurveyIdChatRouteImport } from './routes/surveys/$surveyId.chat'
 import { Route as AdminSurveysSurveyIdIndexRouteImport } from './routes/admin/surveys/$surveyId.index'
+import { Route as AdminSurveysSurveyIdPrintRouteImport } from './routes/admin/surveys/$surveyId.print'
 import { Route as AdminSurveysSurveyIdFillRouteImport } from './routes/admin/surveys/$surveyId.fill'
 import { Route as AdminSurveysSurveyIdChatRouteImport } from './routes/admin/surveys/$surveyId.chat'
 
@@ -117,6 +119,11 @@ const AdminSurveysIndexRoute = AdminSurveysIndexRouteImport.update({
   path: '/surveys/',
   getParentRoute: () => AdminRoute,
 } as any)
+const SurveysSurveyIdPrintRoute = SurveysSurveyIdPrintRouteImport.update({
+  id: '/surveys/$surveyId/print',
+  path: '/surveys/$surveyId/print',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SurveysSurveyIdFillRoute = SurveysSurveyIdFillRouteImport.update({
   id: '/surveys/$surveyId/fill',
   path: '/surveys/$surveyId/fill',
@@ -131,6 +138,12 @@ const AdminSurveysSurveyIdIndexRoute =
   AdminSurveysSurveyIdIndexRouteImport.update({
     id: '/surveys/$surveyId/',
     path: '/surveys/$surveyId/',
+    getParentRoute: () => AdminRoute,
+  } as any)
+const AdminSurveysSurveyIdPrintRoute =
+  AdminSurveysSurveyIdPrintRouteImport.update({
+    id: '/surveys/$surveyId/print',
+    path: '/surveys/$surveyId/print',
     getParentRoute: () => AdminRoute,
   } as any)
 const AdminSurveysSurveyIdFillRoute =
@@ -164,10 +177,12 @@ export interface FileRoutesByFullPath {
   '/surveys/': typeof SurveysIndexRoute
   '/surveys/$surveyId/chat': typeof SurveysSurveyIdChatRoute
   '/surveys/$surveyId/fill': typeof SurveysSurveyIdFillRoute
+  '/surveys/$surveyId/print': typeof SurveysSurveyIdPrintRoute
   '/admin/surveys/': typeof AdminSurveysIndexRoute
   '/surveys/$surveyId/': typeof SurveysSurveyIdIndexRoute
   '/admin/surveys/$surveyId/chat': typeof AdminSurveysSurveyIdChatRoute
   '/admin/surveys/$surveyId/fill': typeof AdminSurveysSurveyIdFillRoute
+  '/admin/surveys/$surveyId/print': typeof AdminSurveysSurveyIdPrintRoute
   '/admin/surveys/$surveyId/': typeof AdminSurveysSurveyIdIndexRoute
 }
 export interface FileRoutesByTo {
@@ -187,10 +202,12 @@ export interface FileRoutesByTo {
   '/surveys': typeof SurveysIndexRoute
   '/surveys/$surveyId/chat': typeof SurveysSurveyIdChatRoute
   '/surveys/$surveyId/fill': typeof SurveysSurveyIdFillRoute
+  '/surveys/$surveyId/print': typeof SurveysSurveyIdPrintRoute
   '/admin/surveys': typeof AdminSurveysIndexRoute
   '/surveys/$surveyId': typeof SurveysSurveyIdIndexRoute
   '/admin/surveys/$surveyId/chat': typeof AdminSurveysSurveyIdChatRoute
   '/admin/surveys/$surveyId/fill': typeof AdminSurveysSurveyIdFillRoute
+  '/admin/surveys/$surveyId/print': typeof AdminSurveysSurveyIdPrintRoute
   '/admin/surveys/$surveyId': typeof AdminSurveysSurveyIdIndexRoute
 }
 export interface FileRoutesById {
@@ -212,10 +229,12 @@ export interface FileRoutesById {
   '/surveys/': typeof SurveysIndexRoute
   '/surveys/$surveyId/chat': typeof SurveysSurveyIdChatRoute
   '/surveys/$surveyId/fill': typeof SurveysSurveyIdFillRoute
+  '/surveys/$surveyId/print': typeof SurveysSurveyIdPrintRoute
   '/admin/surveys/': typeof AdminSurveysIndexRoute
   '/surveys/$surveyId/': typeof SurveysSurveyIdIndexRoute
   '/admin/surveys/$surveyId/chat': typeof AdminSurveysSurveyIdChatRoute
   '/admin/surveys/$surveyId/fill': typeof AdminSurveysSurveyIdFillRoute
+  '/admin/surveys/$surveyId/print': typeof AdminSurveysSurveyIdPrintRoute
   '/admin/surveys/$surveyId/': typeof AdminSurveysSurveyIdIndexRoute
 }
 export interface FileRouteTypes {
@@ -238,10 +257,12 @@ export interface FileRouteTypes {
     | '/surveys/'
     | '/surveys/$surveyId/chat'
     | '/surveys/$surveyId/fill'
+    | '/surveys/$surveyId/print'
     | '/admin/surveys/'
     | '/surveys/$surveyId/'
     | '/admin/surveys/$surveyId/chat'
     | '/admin/surveys/$surveyId/fill'
+    | '/admin/surveys/$surveyId/print'
     | '/admin/surveys/$surveyId/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -261,10 +282,12 @@ export interface FileRouteTypes {
     | '/surveys'
     | '/surveys/$surveyId/chat'
     | '/surveys/$surveyId/fill'
+    | '/surveys/$surveyId/print'
     | '/admin/surveys'
     | '/surveys/$surveyId'
     | '/admin/surveys/$surveyId/chat'
     | '/admin/surveys/$surveyId/fill'
+    | '/admin/surveys/$surveyId/print'
     | '/admin/surveys/$surveyId'
   id:
     | '__root__'
@@ -285,10 +308,12 @@ export interface FileRouteTypes {
     | '/surveys/'
     | '/surveys/$surveyId/chat'
     | '/surveys/$surveyId/fill'
+    | '/surveys/$surveyId/print'
     | '/admin/surveys/'
     | '/surveys/$surveyId/'
     | '/admin/surveys/$surveyId/chat'
     | '/admin/surveys/$surveyId/fill'
+    | '/admin/surveys/$surveyId/print'
     | '/admin/surveys/$surveyId/'
   fileRoutesById: FileRoutesById
 }
@@ -305,6 +330,7 @@ export interface RootRouteChildren {
   SurveysIndexRoute: typeof SurveysIndexRoute
   SurveysSurveyIdChatRoute: typeof SurveysSurveyIdChatRoute
   SurveysSurveyIdFillRoute: typeof SurveysSurveyIdFillRoute
+  SurveysSurveyIdPrintRoute: typeof SurveysSurveyIdPrintRoute
   SurveysSurveyIdIndexRoute: typeof SurveysSurveyIdIndexRoute
 }
 
@@ -429,6 +455,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminSurveysIndexRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/surveys/$surveyId/print': {
+      id: '/surveys/$surveyId/print'
+      path: '/surveys/$surveyId/print'
+      fullPath: '/surveys/$surveyId/print'
+      preLoaderRoute: typeof SurveysSurveyIdPrintRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/surveys/$surveyId/fill': {
       id: '/surveys/$surveyId/fill'
       path: '/surveys/$surveyId/fill'
@@ -448,6 +481,13 @@ declare module '@tanstack/react-router' {
       path: '/surveys/$surveyId'
       fullPath: '/admin/surveys/$surveyId/'
       preLoaderRoute: typeof AdminSurveysSurveyIdIndexRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/surveys/$surveyId/print': {
+      id: '/admin/surveys/$surveyId/print'
+      path: '/surveys/$surveyId/print'
+      fullPath: '/admin/surveys/$surveyId/print'
+      preLoaderRoute: typeof AdminSurveysSurveyIdPrintRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/surveys/$surveyId/fill': {
@@ -476,6 +516,7 @@ interface AdminRouteChildren {
   AdminSurveysIndexRoute: typeof AdminSurveysIndexRoute
   AdminSurveysSurveyIdChatRoute: typeof AdminSurveysSurveyIdChatRoute
   AdminSurveysSurveyIdFillRoute: typeof AdminSurveysSurveyIdFillRoute
+  AdminSurveysSurveyIdPrintRoute: typeof AdminSurveysSurveyIdPrintRoute
   AdminSurveysSurveyIdIndexRoute: typeof AdminSurveysSurveyIdIndexRoute
 }
 
@@ -488,6 +529,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminSurveysIndexRoute: AdminSurveysIndexRoute,
   AdminSurveysSurveyIdChatRoute: AdminSurveysSurveyIdChatRoute,
   AdminSurveysSurveyIdFillRoute: AdminSurveysSurveyIdFillRoute,
+  AdminSurveysSurveyIdPrintRoute: AdminSurveysSurveyIdPrintRoute,
   AdminSurveysSurveyIdIndexRoute: AdminSurveysSurveyIdIndexRoute,
 }
 
@@ -506,6 +548,7 @@ const rootRouteChildren: RootRouteChildren = {
   SurveysIndexRoute: SurveysIndexRoute,
   SurveysSurveyIdChatRoute: SurveysSurveyIdChatRoute,
   SurveysSurveyIdFillRoute: SurveysSurveyIdFillRoute,
+  SurveysSurveyIdPrintRoute: SurveysSurveyIdPrintRoute,
   SurveysSurveyIdIndexRoute: SurveysSurveyIdIndexRoute,
 }
 export const routeTree = rootRouteImport

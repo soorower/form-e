@@ -21,6 +21,7 @@ import type * as messages from "../messages.js";
 import type * as questionnaires from "../questionnaires.js";
 import type * as responseSummaries from "../responseSummaries.js";
 import type * as responses from "../responses.js";
+import type * as serials from "../serials.js";
 import type * as teams from "../teams.js";
 import type * as users from "../users.js";
 import type * as validators from "../validators.js";
@@ -45,6 +46,7 @@ declare const fullApi: ApiFromModules<{
   questionnaires: typeof questionnaires;
   responseSummaries: typeof responseSummaries;
   responses: typeof responses;
+  serials: typeof serials;
   teams: typeof teams;
   users: typeof users;
   validators: typeof validators;

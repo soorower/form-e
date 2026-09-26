@@ -73,9 +73,12 @@ export function FillPage({ surveyId, steps }: { surveyId: string; steps?: boolea
   // only at Submit, because the server reserves the interview's cards under it.
   const [interviewId, setInterviewId] = useState(() => uid())
   // What the server handed that interview; `sets: null` = no answer in time.
-  const [drawn, setDrawn] = useState<{ id: string; sets: QuestionnaireCardDraws | null } | null>(
-    null,
-  )
+  // `serial` is the survey number the server held for it along with the cards.
+  const [drawn, setDrawn] = useState<{
+    id: string
+    sets: QuestionnaireCardDraws | null
+    serial?: number
+  } | null>(null)
   // Responses kept on this device: not confirmed by the server yet, or
   // refused by it (those carry the reason and wait for a deliberate retry).
   const [outbox, setOutbox] = useState<PendingResponse[]>([])
@@ -154,6 +157,7 @@ export function FillPage({ surveyId, steps }: { surveyId: string; steps?: boolea
           sets: Object.fromEntries(
             rows.map((row) => [row.questionId, { sets: row.sets, planRow: row.planRow }]),
           ),
+          serial: rows.find((row) => row.serial !== undefined)?.serial,
         })
       })
       .catch(() => {
@@ -327,13 +331,14 @@ export function FillPage({ surveyId, steps }: { surveyId: string; steps?: boolea
     )
   }
 
-  const nextSerial = serial ?? 1
-
   // These blocks wait for the server's answer. The counts are only what a
   // block falls back on once the server has answered without cards for it or
   // has not answered in time; cards and plan rows other tablets hold right now
   // count too.
   const assigned = drawn?.id === interviewId ? drawn : null
+  // The number the server held along with the cards is the one this interview
+  // is recorded under; without one, the prediction.
+  const nextSerial = assigned?.serial ?? serial ?? 1
   let cardExposure: QuestionnaireCardExposure | undefined
   let planExposure: QuestionnairePlanExposure | undefined
   if (!serverDraws || assigned) {

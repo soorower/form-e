@@ -10,6 +10,7 @@ import type {
   Option,
   Question,
   QuestionType,
+  RankingQuestion,
   Questionnaire,
   TableColumn,
 } from './types'
@@ -93,6 +94,11 @@ export const QUESTION_TYPES: QuestionTypeMeta[] = [
   { type: 'single_choice', label: 'Single choice', description: 'Pick one option from a list of radio buttons.' },
   { type: 'multi_choice', label: 'Multiple choice', description: 'Tick every option that applies.' },
   { type: 'dropdown', label: 'Dropdown', description: 'Pick one option from a compact menu.' },
+  {
+    type: 'ranking',
+    label: 'Priority choice',
+    description: 'Tap options in order of preference: the first tap is priority 1, the next priority 2.',
+  },
   { type: 'table', label: 'Table', description: 'A grid of rows and columns, such as a trip diary.' },
   {
     type: 'choice_experiment',
@@ -126,6 +132,12 @@ export function questionNumbers(questions: Question[]): number[] {
   })
 }
 
+/** How many priorities a priority-choice question asks for: its limit, or every option. */
+export function rankLimit(question: Pick<RankingQuestion, 'options' | 'maxRanks'>): number {
+  const count = question.options.length
+  return question.maxRanks > 0 ? Math.min(question.maxRanks, count) : count
+}
+
 export function questionTypeLabel(type: QuestionType): string {
   return QUESTION_TYPES.find((meta) => meta.type === type)?.label ?? type
 }
@@ -153,6 +165,13 @@ export function createQuestion(type: QuestionType): Question {
     case 'multi_choice':
     case 'dropdown':
       return { ...base, type, options: [createOption('Option 1'), createOption('Option 2')] }
+    case 'ranking':
+      return {
+        ...base,
+        type,
+        options: [createOption('Option 1'), createOption('Option 2'), createOption('Option 3')],
+        maxRanks: 0,
+      }
     case 'table':
       return {
         ...base,

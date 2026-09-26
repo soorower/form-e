@@ -1,6 +1,16 @@
 import { Link } from '@tanstack/react-router'
 import { useMutation, useQuery } from 'convex/react'
-import { ClipboardList, Eye, MessageSquare, Pencil, Play, Plus, Trash2, Users } from 'lucide-react'
+import {
+  ClipboardList,
+  Eye,
+  MessageSquare,
+  Pencil,
+  Play,
+  Plus,
+  Printer,
+  Trash2,
+  Users,
+} from 'lucide-react'
 import { api } from '../../../convex/_generated/api'
 import { useConvexReady } from '#/lib/convex/hooks'
 import { decodeQuestionnaires } from '#/lib/convex/questionnaire-codec'
@@ -194,6 +204,9 @@ function SurveyorHome({
 }) {
   const dayStart = startOfToday()
   const paths = useSurveyPaths()
+  const ready = useConvexReady()
+  // The survey numbers the admin gave this surveyor, by survey.
+  const ranges = useQuery(api.teams.myRanges, ready ? {} : 'skip')
   const mine = (row: ResponseProgress) =>
     (viewer.code !== null && row.surveyorCode === viewer.code) ||
     row.enumerator.trim() === viewer.displayName
@@ -235,6 +248,7 @@ function SurveyorHome({
             const own = rows.filter(mine)
             const today = own.filter((row) => row.submittedAt >= dayStart).length
             const target = survey.responseTarget > 0 ? survey.responseTarget : null
+            const range = ranges?.find((candidate) => candidate.questionnaireId === survey.id)
             return (
               <li key={survey.id}>
                 <Card className="h-full">
@@ -245,6 +259,14 @@ function SurveyorHome({
                     <CardDescription>
                       {survey.teamName.trim() || 'No team name'} · {survey.questions.length}{' '}
                       {survey.questions.length === 1 ? 'question' : 'questions'}
+                      {range && (
+                        <>
+                          {' · '}
+                          <span className="font-medium text-foreground">
+                            Your numbers: {range.start}–{range.end}
+                          </span>
+                        </>
+                      )}
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="grid grid-cols-3 gap-3">
@@ -266,7 +288,7 @@ function SurveyorHome({
                       </p>
                     </div>
                   </CardContent>
-                  <CardFooter className="gap-2">
+                  <CardFooter className="flex-wrap gap-2">
                     <Button
                       size="sm"
                       nativeButton={false}
@@ -275,6 +297,23 @@ function SurveyorHome({
                       <Play data-icon="inline-start" />
                       Start survey
                     </Button>
+                    {range && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        nativeButton={false}
+                        render={
+                          <Link
+                            to={paths.print}
+                            params={{ surveyId: survey.id }}
+                            search={{ from: range.start, to: range.end }}
+                          />
+                        }
+                      >
+                        <Printer data-icon="inline-start" />
+                        Paper forms
+                      </Button>
+                    )}
                     <Button
                       variant="outline"
                       size="sm"

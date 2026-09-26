@@ -107,7 +107,15 @@ export const overview = query({
       groupsByEmail.set(membership.email, list)
     }
     const bootstrap = bootstrapAdmins()
-    const surveyorsBySurvey = new Map<string, { email: string; name: string; code: string | null }[]>()
+    const surveyorsBySurvey = new Map<
+      string,
+      {
+        email: string
+        name: string
+        code: string | null
+        range: { start: number; end: number } | null
+      }[]
+    >()
     for (const assignment of assignments) {
       const user = surveyorByEmail.get(assignment.email) ?? userByEmail.get(assignment.email)
       const list = surveyorsBySurvey.get(assignment.questionnaireId) ?? []
@@ -115,6 +123,10 @@ export const overview = query({
         email: assignment.email,
         name: user ? displayName(user) : assignment.email,
         code: user?.surveyorCode ?? null,
+        range:
+          assignment.rangeStart !== undefined && assignment.rangeEnd !== undefined
+            ? { start: assignment.rangeStart, end: assignment.rangeEnd }
+            : null,
       })
       surveyorsBySurvey.set(assignment.questionnaireId, list)
     }
@@ -177,6 +189,7 @@ export const overview = query({
           title: questionnaire.title,
           defaultLanguage: questionnaire.defaultLanguage,
           teamName: questionnaire.teamName,
+          surveyCodePrefix: questionnaire.surveyCodePrefix,
           ownerId: questionnaire.ownerId ?? null,
           owner: questionnaire.ownerId
             ? (() => {

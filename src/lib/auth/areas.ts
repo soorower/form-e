@@ -30,6 +30,7 @@ export const SURVEY_PATHS = {
     editor: '/surveys/$surveyId',
     fill: '/surveys/$surveyId/fill',
     chat: '/surveys/$surveyId/chat',
+    print: '/surveys/$surveyId/print',
   },
   admin: {
     list: '/admin/surveys',
@@ -38,6 +39,7 @@ export const SURVEY_PATHS = {
     editor: '/admin/surveys/$surveyId',
     fill: '/admin/surveys/$surveyId/fill',
     chat: '/admin/surveys/$surveyId/chat',
+    print: '/admin/surveys/$surveyId/print',
   },
 } as const
 

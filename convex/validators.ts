@@ -102,6 +102,12 @@ export const question = v.union(
   }),
   v.object({
     ...questionBase,
+    type: v.literal('ranking'),
+    options: v.array(option),
+    maxRanks: v.number(),
+  }),
+  v.object({
+    ...questionBase,
     type: v.literal('table'),
     rows: v.array(option),
     columns: v.array(

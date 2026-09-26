@@ -1,7 +1,7 @@
 import type * as ExcelJSTypes from 'exceljs'
 import { columnKey } from './cards'
-import { selectionColumn, type ExportRow } from './export'
-import { blockQuestionCount, pickText, questionNumbers, questionTypeLabel } from './factory'
+import { priorityColumn, selectionColumn, type ExportRow } from './export'
+import { blockQuestionCount, pickText, questionNumbers, questionTypeLabel, rankLimit } from './factory'
 import { followsPlan, planRows } from './scenario-plan'
 import type { ChoiceExperimentQuestion, Lang, Questionnaire } from './types'
 
@@ -168,6 +168,11 @@ export async function buildResponsesWorkbook(
       details = `Tick all that apply: ${question.options
         .map((option) => pickText(option.label, lang))
         .join('; ')} | One column per selection: "${selectionColumn(heading, 0)}", "${selectionColumn(heading, 1)}", …`
+    } else if (question.type === 'ranking') {
+      const heading = `${numbers[index]}. ${pickText(question.label, lang)}`
+      details = `Rank in order of preference (${rankLimit(question)} priorities): ${question.options
+        .map((option) => pickText(option.label, lang))
+        .join('; ')} | One column per priority, in the order tapped: "${priorityColumn(heading, 0)}", "${priorityColumn(heading, 1)}", …`
     } else if ('options' in question) {
       details = question.options.map((option) => pickText(option.label, lang)).join('; ')
     } else if (question.type === 'table') {

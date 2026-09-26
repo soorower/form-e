@@ -47,6 +47,11 @@ export default defineSchema({
     questionnaireId: v.string(),
     email: v.string(),
     addedAt: v.number(),
+    // The block of survey numbers this surveyor collects (Ikra 1–100,
+    // Sorower 101–200), both ends included; absent = no block of their own.
+    // See convex/serials.ts.
+    rangeStart: v.optional(v.number()),
+    rangeEnd: v.optional(v.number()),
   })
     .index('by_questionnaire', ['questionnaireId'])
     .index('by_email', ['email']),
@@ -97,6 +102,10 @@ export default defineSchema({
     // Which row of the block's scenario plan these cards came from, when the
     // block follows a plan. Absent on balanced draws.
     planRow: v.optional(v.number()),
+    // The survey number held for this interview. Decided when the cards are,
+    // because a planned block's row follows the number; `submit` then records
+    // the response under it.
+    serial: v.optional(v.number()),
     drawnAt: v.number(),
   })
     .index('by_questionnaire', ['questionnaireId'])
