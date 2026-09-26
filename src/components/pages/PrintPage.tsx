@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from 'convex/react'
 import { ArrowLeft, Download } from 'lucide-react'
 import { api } from '../../../convex/_generated/api'
@@ -16,11 +16,14 @@ import { decodeQuestionnaire } from '#/lib/convex/questionnaire-codec'
 import { formatSurveyNumber, pickText } from '#/lib/questionnaire/factory'
 import {
   MAX_PAPER_COPIES,
+  PAGES_PER_COPY,
+  PAPER_MARGIN_MM,
   PAPER_SIZES,
+  fitScale,
   paperSerials,
   type PaperSize,
 } from '#/lib/questionnaire/paper'
-import type { Lang } from '#/lib/questionnaire/types'
+import type { Lang, Questionnaire } from '#/lib/questionnaire/types'
 
 export interface PrintSearch {
   from?: number
@@ -65,6 +68,8 @@ export function PrintPage({ surveyId, search }: { surveyId: string; search: Prin
   const [paper, setPaper] = useState<PaperSize>(search.paper ?? 'a4')
   const [lang, setLang] = useState<Lang | null>(null)
   const [person, setPerson] = useState<string>(NOBODY)
+  // The smallest size any copy was shrunk to so it fits two pages.
+  const [shrunk, setShrunk] = useState(1)
 
   const ranged = (members ?? []).filter((member) => member.range !== null)
   const mine = myRanges?.find((range) => range.questionnaireId === surveyId)
@@ -128,7 +133,7 @@ export function PrintPage({ surveyId, search }: { surveyId: string; search: Prin
 
   return (
     <main className="page-wrap px-4 py-8 print:m-0 print:max-w-none print:p-0">
-      <style>{`@page { size: ${PAPER_SIZES[paper].css}; margin: 12mm; }
+      <style>{`@page { size: ${PAPER_SIZES[paper].css}; margin: ${PAPER_MARGIN_MM}mm; }
 @media print { html, body { background: #fff !important; } }`}</style>
 
       <div className="mx-auto mb-6 max-w-3xl space-y-4 print:hidden">
@@ -256,6 +261,13 @@ export function PrintPage({ surveyId, search }: { surveyId: string; search: Prin
                 {lastNumber}
                 {capped && ` (at most ${MAX_PAPER_COPIES} at a time; print the rest as a second file)`}
               </p>
+              <p className="text-sm text-muted-foreground sm:order-last sm:w-full">
+                Each copy is fitted on {PAGES_PER_COPY} pages
+                {shrunk < 1 ? `: text printed at ${Math.round(shrunk * 100)}% of its size` : ''}.
+                {shrunk < 0.7 &&
+                  ' That is small: Legal paper, or fewer questions, gives larger text.'}{' '}
+                In the print window, untick “Headers and footers” for a clean page.
+              </p>
               <Button onClick={download}>
                 <Download data-icon="inline-start" />
                 Download PDF
@@ -265,18 +277,101 @@ export function PrintPage({ surveyId, search }: { surveyId: string; search: Prin
         </Card>
       </div>
 
-      <div className="space-y-6 print:space-y-0">
-        {serials.map((serial, index) => (
-          <PaperForm
-            key={serial}
-            questionnaire={questionnaire}
-            serial={serial}
-            lang={language}
-            enumerator={enumerator}
-            newPage={index > 0}
-          />
-        ))}
-      </div>
+      <PaperSheets
+        questionnaire={questionnaire}
+        serials={serials}
+        lang={language}
+        enumerator={enumerator}
+        paper={paper}
+        onFitted={setShrunk}
+      />
     </main>
+  )
+}
+
+/**
+ * The printed copies, each laid out at the page's own printable width and
+ * shrunk (CSS zoom) just enough to fit PAGES_PER_COPY pages. Measured in the
+ * browser after the fonts have loaded, since Bangla text sets the height.
+ */
+export function PaperSheets({
+  questionnaire,
+  serials,
+  lang,
+  enumerator,
+  paper,
+  onFitted,
+}: {
+  questionnaire: Questionnaire
+  serials: number[]
+  lang: Lang
+  enumerator: string
+  paper: PaperSize
+  onFitted: (smallest: number) => void
+}) {
+  const sheet = useRef<HTMLDivElement>(null)
+  const size = PAPER_SIZES[paper]
+  const widthMm = size.widthMm - 2 * PAPER_MARGIN_MM
+  const heightMm = size.heightMm - 2 * PAPER_MARGIN_MM
+  const key = `${serials[0]}-${serials.length}-${paper}-${lang}-${enumerator}-${questionnaire.updatedAt}`
+  const [fitted, setFitted] = useState<{ key: string; scales: number[] } | null>(null)
+  const scales = fitted?.key === key ? fitted.scales : null
+
+  useLayoutEffect(() => {
+    if (scales) return
+    let cancelled = false
+    const measure = () => {
+      const root = sheet.current
+      if (cancelled || !root) return
+      const probe = document.createElement('div')
+      probe.style.height = `${heightMm}mm`
+      root.appendChild(probe)
+      const pageHeight = probe.getBoundingClientRect().height
+      probe.remove()
+      const next = [...root.querySelectorAll('article')].map((article) => {
+        const style = getComputedStyle(article)
+        // The on-screen padding and frame are not printed.
+        const height =
+          article.getBoundingClientRect().height -
+          parseFloat(style.paddingTop) -
+          parseFloat(style.paddingBottom)
+        return fitScale(height, pageHeight)
+      })
+      setFitted({ key, scales: next })
+      onFitted(next.length > 0 ? Math.min(...next) : 1)
+    }
+    if (typeof document !== 'undefined' && document.fonts) {
+      document.fonts.ready.then(measure)
+    } else {
+      measure()
+    }
+    return () => {
+      cancelled = true
+    }
+  }, [key, scales, heightMm, onFitted])
+
+  return (
+    <div ref={sheet} className="mx-auto w-fit space-y-6 print:space-y-0">
+      {serials.map((serial, index) => {
+        const scale = scales?.[index] ?? 1
+        return (
+          // Laid out wider by 1/scale and zoomed by scale, so the copy still
+          // spans exactly the printable width while its text shrinks.
+          <div
+            key={serial}
+            style={{ width: `${widthMm / scale}mm`, zoom: scale }}
+            className={index > 0 ? 'break-before-page' : undefined}
+          >
+            <PaperForm
+              questionnaire={questionnaire}
+              serial={serial}
+              lang={lang}
+              enumerator={enumerator}
+              newPage={false}
+            />
+          </div>
+        )
+      })}
+    </div>
   )
 }

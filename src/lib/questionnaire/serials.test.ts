@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { pickSerial, planRowForSerial, rangeProblem, rangesOverlap } from '../../../convex/serials'
-import { paperScenarios, paperSerials } from './paper'
+import { fitScale, paperScenarios, paperSerials } from './paper'
 import { planRowForSerial as clientPlanRow } from './scenario-plan'
 
 const team = [
@@ -119,5 +119,17 @@ describe('paper forms', () => {
     expect(paperScenarios(block, 1).scenarios.map((s) => s.set)).toEqual([1, 2, 3, 4])
     expect(paperScenarios(block, 2).scenarios.map((s) => s.set)).toEqual([5, 6, 1, 2])
     expect(paperScenarios(block, 3).scenarios.map((s) => s.set)).toEqual([3, 4, 5, 6])
+  })
+})
+
+describe('fitScale', () => {
+  it('leaves a copy that fits two pages alone', () => {
+    expect(fitScale(1000, 1000)).toBe(1)
+    expect(fitScale(1800, 1000)).toBe(1)
+  })
+
+  it('shrinks a longer copy just enough, keeping room for page breaks', () => {
+    expect(fitScale(3600, 1000)).toBe(0.55)
+    expect(fitScale(2400, 1000)).toBe(0.75)
   })
 })

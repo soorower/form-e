@@ -103,10 +103,10 @@ describe('paper form', () => {
     expect(screen.getByText('ACBUS-103')).toBeTruthy()
     expect(screen.getByText('Sorower')).toBeTruthy()
     // 103 on a two-row plan is row 1: cards 1 and 2.
-    expect(screen.getByText('(SID: 1)')).toBeTruthy()
-    expect(screen.getByText('(SID: 2)')).toBeTruthy()
+    expect(screen.getByText(/SID: 1\)/)).toBeTruthy()
+    expect(screen.getByText(/SID: 2\)/)).toBeTruthy()
     expect(screen.getByText('100 Tk')).toBeTruthy()
-    expect(screen.queryByText('(SID: 3)')).toBeNull()
+    expect(screen.queryByText(/SID: 3\)/)).toBeNull()
     // The priority question comes after the block's two scenarios (questions 1-2).
     expect(screen.getByText(/in order of preference/)).toBeTruthy()
     expect(screen.getByText('3.', { exact: false })).toBeTruthy()
@@ -125,7 +125,7 @@ describe('paper form', () => {
 
   it('gives the next number the next row', () => {
     render(<PaperForm questionnaire={planned()} serial={104} lang="en" enumerator="" newPage />)
-    expect(screen.getByText('(SID: 3)')).toBeTruthy()
-    expect(screen.getByText('(SID: 4)')).toBeTruthy()
+    expect(screen.getByText(/SID: 3\)/)).toBeTruthy()
+    expect(screen.getByText(/SID: 4\)/)).toBeTruthy()
   })
 })

@@ -11,9 +11,37 @@ export const MAX_PAPER_COPIES = 300
 
 export type PaperSize = 'a4' | 'legal'
 
-export const PAPER_SIZES: Record<PaperSize, { label: string; css: string }> = {
-  a4: { label: 'A4 (210 × 297 mm)', css: 'A4' },
-  legal: { label: 'Legal (8.5 × 14 in)', css: 'legal' },
+/** The page margin on every side, in millimetres. */
+export const PAPER_MARGIN_MM = 10
+
+export const PAPER_SIZES: Record<
+  PaperSize,
+  { label: string; css: string; widthMm: number; heightMm: number }
+> = {
+  a4: { label: 'A4 (210 × 297 mm)', css: 'A4', widthMm: 210, heightMm: 297 },
+  legal: { label: 'Legal (8.5 × 14 in)', css: 'legal', widthMm: 215.9, heightMm: 355.6 },
+}
+
+/** How many sheets one copy may take. */
+export const PAGES_PER_COPY = 2
+
+/**
+ * Room lost to page breaks: a scenario or a question is never split, so the
+ * first page usually ends a little short. Kept free when fitting.
+ */
+const BREAK_ALLOWANCE = 0.9
+
+/**
+ * How much a copy has to shrink to fit PAGES_PER_COPY pages, from its height
+ * at full size and the height of one page's printable area (same units).
+ * 1 when it already fits; never below `floor`, where text stops being
+ * readable on paper.
+ */
+export function fitScale(copyHeight: number, pageHeight: number, floor = 0.55): number {
+  if (!(copyHeight > 0) || !(pageHeight > 0)) return 1
+  const room = pageHeight * PAGES_PER_COPY * BREAK_ALLOWANCE
+  if (copyHeight <= room) return 1
+  return Math.max(floor, Math.floor((room / copyHeight) * 100) / 100)
 }
 
 /** The survey numbers from `from` to `to`, both included, capped at MAX_PAPER_COPIES. */
