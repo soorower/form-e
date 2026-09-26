@@ -20,14 +20,10 @@ import {
 import { XLSX_MIME, buildResponsesWorkbook } from '#/lib/questionnaire/export-xlsx'
 import { LANGUAGE_LABELS } from '#/lib/questionnaire/factory'
 import { activeRespondentFields } from '#/lib/questionnaire/respondent'
-import type { Lang, Questionnaire, SurveyResponse } from '#/lib/questionnaire/types'
+import type { Lang, Questionnaire } from '#/lib/questionnaire/types'
+import { useSurveyResponses } from '#/hooks/useSurveyResponses'
 import { UNNAMED } from '#/lib/team/stats'
 import { cn } from '#/lib/utils'
-import { useQuery } from 'convex/react'
-import { api } from '../../../convex/_generated/api'
-import { useConvexReady } from '#/lib/convex/hooks'
-import { decodeResponses } from '#/lib/convex/response-codec'
-import { stripSystemFieldsAll } from '#/lib/convex/rows'
 
 interface ResponsesPanelProps {
   questionnaire: Questionnaire
@@ -48,15 +44,7 @@ const LATEST_COUNT = 10
  * person's file has the same layout and the files can be stacked.
  */
 export function ResponsesPanel({ questionnaire }: ResponsesPanelProps) {
-  const ready = useConvexReady()
-  const responses = decodeResponses(
-    stripSystemFieldsAll<SurveyResponse>(
-      useQuery(
-        api.responses.listBySurvey,
-        ready ? { questionnaireId: questionnaire.id } : 'skip',
-      ) as never,
-    ),
-  )
+  const { responses, complete } = useSurveyResponses(questionnaire.id)
   const [lang, setLang] = useState<Lang>(() => defaultExportLanguage(questionnaire))
   const [building, setBuilding] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
@@ -65,8 +53,14 @@ export function ResponsesPanel({ questionnaire }: ResponsesPanelProps) {
   // The enumerator whose responses are shown ('' = no name), or null for all.
   const [chosenEnumerator, setChosenEnumerator] = useState<string | null>(null)
 
-  if (responses === undefined) {
-    return <p className="text-muted-foreground">Loading…</p>
+  // Everything, or nothing: a download taken while pages were still coming in
+  // would quietly miss the responses not loaded yet.
+  if (responses === undefined || !complete) {
+    return (
+      <p className="text-muted-foreground" aria-busy="true">
+        Loading responses…{responses && responses.length > 0 ? ` ${responses.length} so far` : ''}
+      </p>
+    )
   }
 
   const byEnumerator = countByEnumerator(responses)

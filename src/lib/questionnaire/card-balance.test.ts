@@ -6,6 +6,8 @@ import {
   tallyPlanRow,
   tallySets,
   type CardCounts,
+  summarizeCards,
+  tallyShown,
 } from '../../../convex/cardBalance'
 import { cardPlan, scenariosFromSets } from './cards'
 
@@ -171,5 +173,46 @@ describe('scenario plan rows on the server', () => {
       [2, 0],
     ])
     expect(nextPlanRow(rows, usage)).toBe(1)
+  })
+})
+
+describe('response summaries', () => {
+  it('keeps only which cards and plan row each block showed', () => {
+    const answers = {
+      name: 'Karim',
+      bus: {
+        planRow: 7,
+        scenarios: [
+          { set: 14, levels: { Time_A: '5 Hours' }, choice: 'A' },
+          { set: 21, levels: [{ key: 'ভ্রমণ_ব্যয়_A', value: '২০০০' }], choice: 'B' },
+        ],
+      },
+      mall: { scenarios: [{ set: 3, levels: {}, choice: 'yes' }, { levels: {}, choice: '' }] },
+    }
+    expect(summarizeCards(answers)).toEqual([
+      { questionId: 'bus', sets: [14, 21], planRow: 7 },
+      { questionId: 'mall', sets: [3] },
+    ])
+    expect(summarizeCards(null)).toEqual([])
+    expect(summarizeCards('junk')).toEqual([])
+  })
+
+  it('counts the same usage from summaries as from the full answers', () => {
+    const responses = [
+      { bus: { planRow: 1, scenarios: [{ set: 1 }, { set: 2 }] } },
+      { bus: { planRow: 2, scenarios: [{ set: 2 }, { set: 3 }] } },
+      { bus: { planRow: 1, scenarios: [{ set: 1 }, { set: 3 }] } },
+    ]
+    const fromAnswers = new Map<string, CardCounts>()
+    const planFromAnswers = new Map<string, CardCounts>()
+    const fromSummaries = new Map<string, CardCounts>()
+    const planFromSummaries = new Map<string, CardCounts>()
+    for (const answers of responses) {
+      tallyAnswers(answers, fromAnswers, planFromAnswers)
+      tallyShown(summarizeCards(answers), fromSummaries, planFromSummaries)
+    }
+    expect(fromSummaries).toEqual(fromAnswers)
+    expect(planFromSummaries).toEqual(planFromAnswers)
+    expect(fromSummaries.get('bus')).toEqual(new Map([[1, 2], [2, 2], [3, 2]]))
   })
 })

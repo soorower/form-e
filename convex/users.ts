@@ -1,4 +1,6 @@
-import { query } from './_generated/server'
+import { v } from 'convex/values'
+import { mutation, query } from './_generated/server'
+import { emailSettings } from './emailSettings'
 import { accessFor, canBuild, currentUser, displayName, isApproved } from './access'
 
 /**
@@ -37,5 +39,29 @@ export const viewer = query({
       canBuild: canBuild(access),
       groups,
     }
+  },
+})
+
+/**
+ * What the sign-in page may offer: codes by email (sign-up verification and
+ * "Forgot password?") only once the deployment can send them.
+ */
+export const authOptions = query({
+  args: {},
+  handler: async () => ({ emailCodes: emailSettings() !== null }),
+})
+
+/**
+ * Sets the signed-in account's name, once, after a password sign-up proved
+ * its address. It never replaces a name already there, so a sign-up that
+ * landed on someone else's existing account cannot rename it.
+ */
+export const setMyName = mutation({
+  args: { name: v.string() },
+  handler: async (ctx, { name }) => {
+    const user = await currentUser(ctx)
+    const cleaned = name.trim().slice(0, 80)
+    if (!user || !cleaned || user.name?.trim()) return
+    await ctx.db.patch(user._id, { name: cleaned })
   },
 })

@@ -9,7 +9,9 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as TermsRouteImport } from './routes/terms'
 import { Route as SignupRouteImport } from './routes/signup'
+import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as CreateRouteImport } from './routes/create'
@@ -30,9 +32,19 @@ import { Route as AdminSurveysSurveyIdIndexRouteImport } from './routes/admin/su
 import { Route as AdminSurveysSurveyIdFillRouteImport } from './routes/admin/surveys/$surveyId.fill'
 import { Route as AdminSurveysSurveyIdChatRouteImport } from './routes/admin/surveys/$surveyId.chat'
 
+const TermsRoute = TermsRouteImport.update({
+  id: '/terms',
+  path: '/terms',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SignupRoute = SignupRouteImport.update({
   id: '/signup',
   path: '/signup',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PrivacyRoute = PrivacyRouteImport.update({
+  id: '/privacy',
+  path: '/privacy',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -141,7 +153,9 @@ export interface FileRoutesByFullPath {
   '/create': typeof CreateRoute
   '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
+  '/privacy': typeof PrivacyRoute
   '/signup': typeof SignupRoute
+  '/terms': typeof TermsRoute
   '/admin/create': typeof AdminCreateRoute
   '/admin/dashboard': typeof AdminDashboardRoute
   '/admin/login': typeof AdminLoginRoute
@@ -162,7 +176,9 @@ export interface FileRoutesByTo {
   '/create': typeof CreateRoute
   '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
+  '/privacy': typeof PrivacyRoute
   '/signup': typeof SignupRoute
+  '/terms': typeof TermsRoute
   '/admin/create': typeof AdminCreateRoute
   '/admin/dashboard': typeof AdminDashboardRoute
   '/admin/login': typeof AdminLoginRoute
@@ -185,7 +201,9 @@ export interface FileRoutesById {
   '/create': typeof CreateRoute
   '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
+  '/privacy': typeof PrivacyRoute
   '/signup': typeof SignupRoute
+  '/terms': typeof TermsRoute
   '/admin/create': typeof AdminCreateRoute
   '/admin/dashboard': typeof AdminDashboardRoute
   '/admin/login': typeof AdminLoginRoute
@@ -209,7 +227,9 @@ export interface FileRouteTypes {
     | '/create'
     | '/dashboard'
     | '/login'
+    | '/privacy'
     | '/signup'
+    | '/terms'
     | '/admin/create'
     | '/admin/dashboard'
     | '/admin/login'
@@ -230,7 +250,9 @@ export interface FileRouteTypes {
     | '/create'
     | '/dashboard'
     | '/login'
+    | '/privacy'
     | '/signup'
+    | '/terms'
     | '/admin/create'
     | '/admin/dashboard'
     | '/admin/login'
@@ -252,7 +274,9 @@ export interface FileRouteTypes {
     | '/create'
     | '/dashboard'
     | '/login'
+    | '/privacy'
     | '/signup'
+    | '/terms'
     | '/admin/create'
     | '/admin/dashboard'
     | '/admin/login'
@@ -275,7 +299,9 @@ export interface RootRouteChildren {
   CreateRoute: typeof CreateRoute
   DashboardRoute: typeof DashboardRoute
   LoginRoute: typeof LoginRoute
+  PrivacyRoute: typeof PrivacyRoute
   SignupRoute: typeof SignupRoute
+  TermsRoute: typeof TermsRoute
   SurveysIndexRoute: typeof SurveysIndexRoute
   SurveysSurveyIdChatRoute: typeof SurveysSurveyIdChatRoute
   SurveysSurveyIdFillRoute: typeof SurveysSurveyIdFillRoute
@@ -284,11 +310,25 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/terms': {
+      id: '/terms'
+      path: '/terms'
+      fullPath: '/terms'
+      preLoaderRoute: typeof TermsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/signup': {
       id: '/signup'
       path: '/signup'
       fullPath: '/signup'
       preLoaderRoute: typeof SignupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/privacy': {
+      id: '/privacy'
+      path: '/privacy'
+      fullPath: '/privacy'
+      preLoaderRoute: typeof PrivacyRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -460,7 +500,9 @@ const rootRouteChildren: RootRouteChildren = {
   CreateRoute: CreateRoute,
   DashboardRoute: DashboardRoute,
   LoginRoute: LoginRoute,
+  PrivacyRoute: PrivacyRoute,
   SignupRoute: SignupRoute,
+  TermsRoute: TermsRoute,
   SurveysIndexRoute: SurveysIndexRoute,
   SurveysSurveyIdChatRoute: SurveysSurveyIdChatRoute,
   SurveysSurveyIdFillRoute: SurveysSurveyIdFillRoute,

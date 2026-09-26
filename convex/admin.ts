@@ -71,7 +71,9 @@ export const overview = query({
         ctx.db.query('groupMembers').collect(),
         ctx.db.query('users').collect(),
         ctx.db.query('questionnaires').collect(),
-        ctx.db.query('responses').collect(),
+        // Summaries: the overview only counts responses, and full ones would
+        // put several large surveys past the read limit.
+        ctx.db.query('responseSummaries').collect(),
         ctx.db.query('assignments').collect(),
       ])
 

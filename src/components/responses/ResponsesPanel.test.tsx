@@ -12,7 +12,11 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('convex/react', () => ({
-  useQuery: (_reference: unknown, args: unknown) => (args === 'skip' ? undefined : mocks.rows),
+  // One page holding every row, already exhausted: what the panel waits for.
+  usePaginatedQuery: (_reference: unknown, args: unknown) =>
+    args === 'skip'
+      ? { results: [], status: 'LoadingFirstPage', loadMore: () => undefined }
+      : { results: mocks.rows, status: 'Exhausted', loadMore: () => undefined },
 }))
 vi.mock('#/lib/questionnaire/export', async (original) => ({
   ...(await original<typeof import('#/lib/questionnaire/export')>()),

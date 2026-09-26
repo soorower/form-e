@@ -61,6 +61,29 @@ export default defineSchema({
     .index('by_questionnaire', ['questionnaireId'])
     .index('by_serial', ['questionnaireId', 'serial']),
 
+  // One small row per response: who collected it, when, and which cards it
+  // showed. Progress, leaderboards, counts, and card balancing read these
+  // instead of the full responses, so a 700-response survey stays far inside
+  // Convex's per-query read limit. Written in the same mutation as the
+  // response, so the two never disagree (convex/responseSummaries.ts).
+  responseSummaries: defineTable({
+    responseId: v.string(),
+    questionnaireId: v.string(),
+    serial: v.number(),
+    enumerator: v.string(),
+    surveyorCode: v.optional(v.string()),
+    submittedAt: v.number(),
+    cards: v.array(
+      v.object({
+        questionId: v.string(),
+        sets: v.array(v.number()),
+        planRow: v.optional(v.number()),
+      }),
+    ),
+  })
+    .index('by_questionnaire', ['questionnaireId'])
+    .index('by_response', ['responseId']),
+
   // Cards handed to an interview that is still going on (balanced drawing, or
   // one row of the creator's scenario plan). `responses.drawCards` writes a
   // row per choice-experiment block, counts it as used so no other tablet

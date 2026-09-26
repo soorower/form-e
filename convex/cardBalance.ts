@@ -101,3 +101,45 @@ export function pickLeastUsed(
   shuffle(chosen, random)
   return chosen
 }
+
+/** Which cards (and plan row) one response showed in one choice block. */
+export interface ShownCards {
+  questionId: string
+  sets: number[]
+  planRow?: number
+}
+
+/**
+ * The cards a response showed, block by block: all that card balancing needs
+ * of it. Kept in a small summary row beside the response, so counting usage
+ * over a 700-response survey reads kilobytes rather than every full answer.
+ */
+export function summarizeCards(answers: unknown): ShownCards[] {
+  if (!answers || typeof answers !== 'object') return []
+  const shown: ShownCards[] = []
+  for (const [questionId, value] of Object.entries(answers as Record<string, unknown>)) {
+    const answer = value as { scenarios?: unknown; planRow?: unknown } | null
+    if (!Array.isArray(answer?.scenarios)) continue
+    const sets = (answer.scenarios as { set?: unknown }[])
+      .map((scenario) => scenario?.set)
+      .filter((set): set is number => typeof set === 'number')
+    shown.push({
+      questionId,
+      sets,
+      ...(typeof answer.planRow === 'number' ? { planRow: answer.planRow } : {}),
+    })
+  }
+  return shown
+}
+
+/** Adds one response's summarized cards to the usage tallies. */
+export function tallyShown(
+  cards: ShownCards[],
+  into: Map<string, CardCounts>,
+  planRows: Map<string, CardCounts>,
+): void {
+  for (const { questionId, sets, planRow } of cards) {
+    for (const set of sets) bump(into, questionId, set)
+    if (planRow !== undefined) bump(planRows, questionId, planRow)
+  }
+}

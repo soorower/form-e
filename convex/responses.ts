@@ -1,14 +1,16 @@
 import { ConvexError, v, type Infer } from 'convex/values'
+import { paginationOptsValidator } from 'convex/server'
 import { mutation, query, type MutationCtx, type QueryCtx } from './_generated/server'
 import {
   CARD_RESERVATION_MS,
   nextPlanRow,
   pickLeastUsed,
-  tallyAnswers,
   tallyPlanRow,
   tallySets,
+  tallyShown,
   type CardCounts,
 } from './cardBalance'
+import { recordSummary } from './responseSummaries'
 import {
   canAccess,
   canView,
@@ -65,8 +67,9 @@ async function highestSerial(
 /**
  * Card usage for one survey, per choice-experiment question id: `shown` from
  * the responses already recorded, `reserved` from interviews still going on.
- * Counted from the responses themselves each time rather than kept in a
- * tally, so deleting or importing responses can never leave it out of step.
+ * Counted from the responses' summary rows each time rather than kept in a
+ * tally, so deleting or importing responses can never leave it out of step,
+ * while a 700-response survey still reads only a few hundred kilobytes.
  * `expired` are reservations nobody submitted in time; a mutation clears them.
  *
  * `planShown` / `planReserved` count the same two things for the rows of a
@@ -77,12 +80,12 @@ async function cardUsage(ctx: QueryCtx | MutationCtx, questionnaireId: string, n
   const reserved = new Map<string, CardCounts>()
   const planShown = new Map<string, CardCounts>()
   const planReserved = new Map<string, CardCounts>()
-  const responses = await ctx.db
-    .query('responses')
+  const summaries = await ctx.db
+    .query('responseSummaries')
     .withIndex('by_questionnaire', (q) => q.eq('questionnaireId', questionnaireId))
     .collect()
-  for (const response of responses) tallyAnswers(response.answers, shown, planShown)
-  const submitted = new Set(responses.map((response) => response.id))
+  for (const summary of summaries) tallyShown(summary.cards, shown, planShown)
+  const submitted = new Set(summaries.map((summary) => summary.responseId))
 
   const draws = await ctx.db
     .query('cardDraws')
@@ -121,35 +124,23 @@ async function deleteDrawsFor(ctx: MutationCtx, responseId: string) {
   for (const draw of draws) await ctx.db.delete(draw._id)
 }
 
-export const listBySurvey = query({
-  args: { questionnaireId: v.string() },
-  handler: async (ctx, { questionnaireId }) => {
+/**
+ * One page of a survey's full responses, in survey-number order, for the
+ * Responses tab and its downloads. Paged because a 700-response survey's
+ * answers are several megabytes: one query reading them all would sit near
+ * Convex's read limit, and would re-read everything on every new submit.
+ */
+export const listBySurveyPage = query({
+  args: { questionnaireId: v.string(), paginationOpts: paginationOptsValidator },
+  handler: async (ctx, { questionnaireId, paginationOpts }) => {
     const questionnaire = await questionnaireByAppId(ctx, questionnaireId)
-    if (!questionnaire || !canAccess(await viewerAccess(ctx), questionnaire)) return []
-    const rows = await ctx.db
-      .query('responses')
-      .withIndex('by_questionnaire', (q) => q.eq('questionnaireId', questionnaireId))
-      .collect()
-    return rows.sort((a, b) => a.serial - b.serial || a.submittedAt - b.submittedAt)
-  },
-})
-
-/** Every response to a survey the caller can see, for the dashboard's team totals. */
-export const listAll = query({
-  args: {},
-  handler: async (ctx) => {
-    const access = await viewerAccess(ctx)
-    if (access?.admin) return ctx.db.query('responses').collect()
-    const rows = []
-    for (const questionnaire of await visibleQuestionnaires(ctx, access)) {
-      rows.push(
-        ...(await ctx.db
-          .query('responses')
-          .withIndex('by_questionnaire', (q) => q.eq('questionnaireId', questionnaire.id))
-          .collect()),
-      )
+    if (!questionnaire || !canAccess(await viewerAccess(ctx), questionnaire)) {
+      return { page: [], isDone: true, continueCursor: '' }
     }
-    return rows
+    return ctx.db
+      .query('responses')
+      .withIndex('by_serial', (q) => q.eq('questionnaireId', questionnaireId))
+      .paginate(paginationOpts)
   },
 })
 
@@ -165,18 +156,20 @@ export const progress = query({
     const rows = []
     for (const questionnaire of await visibleQuestionnaires(ctx, access)) {
       if (!canView(access, questionnaire)) continue
-      const responses = await ctx.db
-        .query('responses')
+      // Summary rows: a few hundred bytes each instead of the full answers,
+      // so several 700-response surveys fit comfortably in one query.
+      const summaries = await ctx.db
+        .query('responseSummaries')
         .withIndex('by_questionnaire', (q) => q.eq('questionnaireId', questionnaire.id))
         .collect()
-      for (const response of responses) {
+      for (const summary of summaries) {
         rows.push({
-          id: response.id,
-          questionnaireId: response.questionnaireId,
-          serial: response.serial,
-          enumerator: response.enumerator,
-          surveyorCode: response.surveyorCode ?? null,
-          submittedAt: response.submittedAt,
+          id: summary.responseId,
+          questionnaireId: summary.questionnaireId,
+          serial: summary.serial,
+          enumerator: summary.enumerator,
+          surveyorCode: summary.surveyorCode ?? null,
+          submittedAt: summary.submittedAt,
         })
       }
     }
@@ -247,7 +240,7 @@ export const submit = mutation({
         : args.enumerator.trim().slice(0, MAX_NAME_LENGTH)
     const details = cleanDetails(respondent)
 
-    await ctx.db.insert('responses', {
+    const response = {
       ...rest,
       answers,
       enumerator,
@@ -263,7 +256,9 @@ export const submit = mutation({
       // The tablet's time when it sent one, never in the future of the server's.
       submittedAt: collectedAt === undefined ? now : Math.min(collectedAt, now),
       receivedAt: now,
-    })
+    }
+    await ctx.db.insert('responses', response)
+    await recordSummary(ctx, response)
     return { serial, surveyNumber }
   },
 })
@@ -302,6 +297,7 @@ export const importMany = mutation({
         .unique()
       if (existing) continue
       await ctx.db.insert('responses', response)
+      await recordSummary(ctx, response)
       imported += 1
     }
     return imported

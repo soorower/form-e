@@ -135,6 +135,12 @@ export const remove = mutation({
       .collect()
     for (const response of responses) await ctx.db.delete(response._id)
 
+    const summaries = await ctx.db
+      .query('responseSummaries')
+      .withIndex('by_questionnaire', (q) => q.eq('questionnaireId', id))
+      .collect()
+    for (const summary of summaries) await ctx.db.delete(summary._id)
+
     const draws = await ctx.db
       .query('cardDraws')
       .withIndex('by_questionnaire', (q) => q.eq('questionnaireId', id))

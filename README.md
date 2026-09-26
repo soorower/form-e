@@ -31,8 +31,10 @@ Set these on the Convex deployment (`npx convex env set NAME value`, or the dash
 | `EXTRA_SITE_URLS` | Comma-separated further origins that may finish a sign-in, e.g. the hosted site. |
 | `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET` | A Google OAuth client whose redirect URI is `https://<deployment>.convex.site/api/auth/callback/google`. |
 | `ADMIN_EMAILS` | Comma-separated addresses that count as admins once they sign in **with Google** (the bootstrap; further admins are promoted from the panel). |
+| `SMTP_USER`, `SMTP_PASS` | An SMTP login that sends sign-up and password-reset codes, e.g. a Gmail address and a Gmail [app password](https://myaccount.google.com/apppasswords). |
+| `SMTP_HOST`, `SMTP_PORT`, `EMAIL_FROM` | Optional: default `smtp.gmail.com`, `465`, and `Form-E <SMTP_USER>`. |
 
-Email + password sign-in needs nothing more, but it sends no verification mail: such an account waits until an admin approves it on `/admin`.
+With the SMTP variables set, an email + password sign-up must enter a code sent to the address before it can sign in, and "Forgot password?" resets by code. Without them, password accounts are unverified and wait until an admin approves them on `/admin`.
 
 ## Roles
 
