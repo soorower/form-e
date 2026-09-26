@@ -759,12 +759,25 @@ export function attributeLevels(question: ChoiceExperimentQuestion, attributeKey
   return levels
 }
 
-/** Display text for a raw level in the given language, falling back to the raw text. */
+/**
+ * What a scenario table shows where the card has no level: an attribute that
+ * does not apply to that alternative, such as a lift on a regular crossing
+ * beside a foot overbridge that has one. The card itself stays blank (and so
+ * does the export); only the table shows the mark, so the cell reads as "not
+ * applicable" rather than as something missing.
+ */
+export const NOT_APPLICABLE_LEVEL = '####'
+
+/**
+ * Display text for a raw level in the given language, falling back to the raw
+ * text, and to NOT_APPLICABLE_LEVEL for a blank cell.
+ */
 export function levelLabel(
   question: Pick<ChoiceExperimentQuestion, 'levelLabels'>,
   raw: string,
   lang: Lang,
 ): string {
+  if (raw.trim() === '') return NOT_APPLICABLE_LEVEL
   const label = question.levelLabels[raw]
   return (label && label[lang]) || raw
 }

@@ -112,6 +112,17 @@ describe('paper form', () => {
     expect(screen.getByText('3.', { exact: false })).toBeTruthy()
   })
 
+  it('marks a level the card leaves blank with ####', () => {
+    const questionnaire = planned()
+    const block = questionnaire.questions[0] as ChoiceExperimentQuestion
+    block.attributes = [...block.attributes, { key: 'Lift', label: text('Lift') }]
+    block.cards[0].levels.Lift_A = 'Available'
+    render(<PaperForm questionnaire={questionnaire} serial={1} lang="en" enumerator="" newPage={false} />)
+    expect(screen.getByText('Available')).toBeTruthy()
+    // Card 1 has no lift level for the train; card 2 has none for either.
+    expect(screen.getAllByText('####')).toHaveLength(3)
+  })
+
   it('gives the next number the next row', () => {
     render(<PaperForm questionnaire={planned()} serial={104} lang="en" enumerator="" newPage />)
     expect(screen.getByText('(SID: 3)')).toBeTruthy()
