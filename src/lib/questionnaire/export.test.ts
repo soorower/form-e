@@ -314,15 +314,15 @@ describe('multiple-choice answers', () => {
   it('gives every selection its own column', () => {
     const questionnaire = withModes()
     const rows = responsesToRows(questionnaire, [ticked('r1', ['bus', 'car'])])
-    expect(rows[0]['1. Modes used (1)']).toBe('Bus')
-    expect(rows[0]['1. Modes used (2)']).toBe('Car')
+    expect(rows[0]['1. Modes used (1)']).toBe('1) Bus')
+    expect(rows[0]['1. Modes used (2)']).toBe('3) Car')
     expect(exportColumns(questionnaire, rows)).toContain('1. Modes used (2)')
   })
 
   it('numbers the columns in the question order, not the tapping order', () => {
     const rows = responsesToRows(withModes(), [ticked('r1', ['car', 'bus'])])
-    expect(rows[0]['1. Modes used (1)']).toBe('Bus')
-    expect(rows[0]['1. Modes used (2)']).toBe('Car')
+    expect(rows[0]['1. Modes used (1)']).toBe('1) Bus')
+    expect(rows[0]['1. Modes used (2)']).toBe('3) Car')
   })
 
   it('makes as many columns as the widest answer needs, and leaves the rest blank', () => {
@@ -338,7 +338,7 @@ describe('multiple-choice answers', () => {
       '1. Modes used (3)',
     ])
     expect(rows[0]['1. Modes used (2)']).toBe('')
-    expect(rows[1]['1. Modes used (3)']).toBe('Car')
+    expect(rows[1]['1. Modes used (3)']).toBe('3) Car')
   })
 
   it('keeps every selection when options were deleted after the responses came in', () => {
@@ -354,7 +354,7 @@ describe('multiple-choice answers', () => {
     }
     const rows = responsesToRows(trimmed, collected)
     expect(exportColumns(trimmed, rows).filter((c) => c.startsWith('1. Modes used'))).toHaveLength(3)
-    expect(rows[0]['1. Modes used (1)']).toBe('Bus')
+    expect(rows[0]['1. Modes used (1)']).toBe('1) Bus')
     expect(rows[0]['1. Modes used (2)']).toBe('train')
     expect(rows[0]['1. Modes used (3)']).toBe('car')
   })
@@ -564,5 +564,37 @@ describe('priority choice export', () => {
       '1. Preferred modes (priority 1)',
       '1. Preferred modes (priority 2)',
     ])
+  })
+})
+
+describe('numbered answers in the export', () => {
+  it('writes the answer as the form numbers it, keeping numbers typed by hand', () => {
+    const traffic = createQuestion('single_choice')
+    const often = createQuestion('single_choice')
+    if (traffic.type !== 'single_choice' || often.type !== 'single_choice') throw new Error('expected single choice')
+    traffic.id = 'traffic'
+    traffic.label = text('', 'যানজটের মাত্রা কেমন?')
+    traffic.options = [
+      { id: 'low', label: text('', 'কম') },
+      { id: 'mid', label: text('', 'মাঝারি') },
+      { id: 'high', label: text('', 'বেশি') },
+    ]
+    often.id = 'often'
+    often.label = text('', 'কত ঘন ঘন?')
+    often.options = [
+      { id: 'week', label: text('', '১) সপ্তাহে কমপক্ষে একবার') },
+      { id: 'month', label: text('', '২) মাসে কমপক্ষে একবার') },
+    ]
+    const questionnaire: Questionnaire = {
+      ...createQuestionnaire(),
+      languages: ['bn'],
+      defaultLanguage: 'bn',
+      questions: [often, traffic],
+    }
+    const [row] = responsesToRows(questionnaire, [
+      { ...response, answers: { traffic: 'mid', often: 'month' } },
+    ])
+    expect(row['2. যানজটের মাত্রা কেমন?']).toBe('২) মাঝারি')
+    expect(row['1. কত ঘন ঘন?']).toBe('২) মাসে কমপক্ষে একবার')
   })
 })

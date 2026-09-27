@@ -1,6 +1,6 @@
 import type * as ExcelJSTypes from 'exceljs'
 import { columnKey } from './cards'
-import { priorityColumn, selectionColumn, type ExportRow } from './export'
+import { optionLabel, priorityColumn, selectionColumn, type ExportRow } from './export'
 import { blockQuestionCount, pickText, questionNumbers, questionTypeLabel, rankLimit } from './factory'
 import { followsPlan, planRows } from './scenario-plan'
 import type { ChoiceExperimentQuestion, Lang, Questionnaire } from './types'
@@ -166,7 +166,7 @@ export async function buildResponsesWorkbook(
       // Several selections, so the export gives each one its own column.
       const heading = `${numbers[index]}. ${pickText(question.label, lang)}`
       details = `Tick all that apply: ${question.options
-        .map((option) => pickText(option.label, lang))
+        .map((_option, option) => optionLabel(question, option, lang))
         .join('; ')} | One column per selection: "${selectionColumn(heading, 0)}", "${selectionColumn(heading, 1)}", …`
     } else if (question.type === 'ranking') {
       const heading = `${numbers[index]}. ${pickText(question.label, lang)}`
@@ -174,7 +174,7 @@ export async function buildResponsesWorkbook(
         .map((option) => pickText(option.label, lang))
         .join('; ')} | One column per priority, in the order tapped: "${priorityColumn(heading, 0)}", "${priorityColumn(heading, 1)}", …`
     } else if ('options' in question) {
-      details = question.options.map((option) => pickText(option.label, lang)).join('; ')
+      details = question.options.map((_option, option) => optionLabel(question, option, lang)).join('; ')
     } else if (question.type === 'table') {
       details = `Rows: ${question.rows.map((row) => pickText(row.label, lang)).join('; ')} | Columns: ${question.columns.map((column) => pickText(column.label, lang)).join('; ')}`
     } else if (question.type === 'choice_experiment') {

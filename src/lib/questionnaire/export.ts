@@ -1,6 +1,6 @@
 import { OTHER_ANSWER, isChoiceExperimentAnswer, isTableAnswer, scenarioChoice } from './answers'
 import { columnKey } from './cards'
-import { pickText, questionNumbers, rankLimit } from './factory'
+import { numberedOptionLabel, pickText, questionNumbers, rankLimit } from './factory'
 import { activeRespondentFields, respondentColumn } from './respondent'
 import type {
   AnswerValue,
@@ -16,10 +16,22 @@ import type {
 
 export type ExportRow = Record<string, string | number>
 
+/**
+ * An answer option as the respondent saw it: numbered "১) কম" / "1) Bus" for
+ * single choice, multiple choice and dropdown questions, as the form numbers
+ * them (hand-typed numbers kept), so the sheet matches the questionnaire.
+ * Priority choice is not numbered: its order is the answer.
+ */
+export function optionLabel(question: Question, index: number, lang: Lang): string {
+  if (!('options' in question)) return ''
+  const label = pickText(question.options[index].label, lang)
+  return question.type === 'ranking' ? label : numberedOptionLabel(label, index, lang)
+}
+
 function optionText(question: Question, id: string, lang: Lang): string {
   if (!('options' in question)) return id
-  const option = question.options.find((o) => o.id === id)
-  return option ? pickText(option.label, lang) : id
+  const index = question.options.findIndex((o) => o.id === id)
+  return index === -1 ? id : optionLabel(question, index, lang)
 }
 
 function plainAnswer(question: Question, value: AnswerValue | undefined, lang: Lang): string {
