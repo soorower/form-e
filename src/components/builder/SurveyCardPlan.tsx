@@ -30,6 +30,7 @@ import type {
   ScenarioPlanRow,
 } from '#/lib/questionnaire/types'
 import { cn } from '#/lib/utils'
+import { useConfirm } from '#/components/ConfirmProvider'
 
 /**
  * How the whole survey's choice-experiment cards are handed out, in ONE panel
@@ -303,6 +304,7 @@ function ScenarioPlan({
   onBlockChange: (id: string, patch: Partial<ChoiceExperimentQuestion>) => void
   onPlanSplit: (byBlock: Map<string, ScenarioPlanRow[]>) => void
 }) {
+  const confirm = useConfirm()
   // The blocks share row numbers, so any planned block speaks for the plan.
   const planned = blocks.find((block) => (block.scenarioPlan?.length ?? 0) > 0)
   const rows = planned?.scenarioPlan ?? []
@@ -313,7 +315,7 @@ function ScenarioPlan({
   const [showRows, setShowRows] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
 
-  function importPlan(source: string) {
+  async function importPlan(source: string) {
     try {
       const parsed = parseScenarioPlan(source)
       const messages = [
@@ -341,9 +343,11 @@ function ScenarioPlan({
             split.missing > 0
               ? `The blocks ask for ${count(split.missing, 'scenario', 'scenarios')} more than the sheet has, so the last of them would get no rows and draw cards at random.`
               : `${count(split.leftover, 'column', 'columns')} of the sheet would be left over.`
-          const anyway = window.confirm(
-            `${problem}\n\nUsually the fix is to set each block's "Scenarios each" so they add up to the sheet's ${count(parsed.scenariosPerRow, 'column', 'columns')}, then import again.\n\nImport it anyway?`,
-          )
+          const anyway = await confirm({
+            title: 'Import the plan anyway?',
+            description: `${problem}\n\nUsually the fix is to set each block's "Scenarios each" so they add up to the sheet's ${count(parsed.scenariosPerRow, 'column', 'columns')}, then import again.`,
+            confirmLabel: 'Import anyway',
+          })
           if (!anyway) {
             setError('The plan was not imported. Adjust the blocks and try again.')
             setNotice(null)
@@ -480,10 +484,14 @@ function ScenarioPlan({
             variant="ghost"
             size="sm"
             className="text-destructive hover:text-destructive"
-            onClick={() => {
-              const sure = window.confirm(
-                'Remove the scenario plan from every block? They draw cards at random from then on. This cannot be undone.',
-              )
+            onClick={async () => {
+              const sure = await confirm({
+                title: 'Remove the scenario plan?',
+                description:
+                  'It is removed from every block, and they draw cards at random from then on. This cannot be undone.',
+                confirmLabel: 'Remove plan',
+                destructive: true,
+              })
               if (!sure) return
               for (const block of blocks) onBlockChange(block.id, { scenarioPlan: [] })
               setNotice(null)

@@ -14,6 +14,7 @@ import {
   type SubmitOutcome,
 } from '#/components/renderer/QuestionnaireRenderer'
 import { useSurveyPaths } from '#/components/auth/area'
+import { useConfirm } from '#/components/ConfirmProvider'
 import { useViewer } from '#/hooks/useViewer'
 import { useConvexReady } from '#/lib/convex/hooks'
 import { decodeQuestionnaire } from '#/lib/convex/questionnaire-codec'
@@ -71,6 +72,7 @@ export function FillPage({
 }) {
   const paths = useSurveyPaths()
   const navigate = useNavigate()
+  const confirm = useConfirm()
   const ready = useConvexReady()
   const stored = useQuery(api.questionnaires.get, ready ? { id: surveyId } : 'skip')
   // Decoded once per server row: decoding on every render made a new object
@@ -268,10 +270,13 @@ export function FillPage({
     flushOutbox()
   }, [flushOutbox])
 
-  function discardRefused(id: string) {
-    const sure = window.confirm(
-      'Discard this response for good? It is not on the server and cannot be recovered afterwards.',
-    )
+  async function discardRefused(id: string) {
+    const sure = await confirm({
+      title: 'Discard this response for good?',
+      description: 'It is not on the server and cannot be recovered afterwards.',
+      confirmLabel: 'Discard',
+      destructive: true,
+    })
     if (!sure) return
     removeFromOutbox(id)
     setOutbox(readOutbox())
@@ -586,16 +591,25 @@ export function FillPage({
 
 /**
  * Holds back leaving the page while the interview has answers that are not
- * submitted: a tap on a header link, a back-swipe, a reload. The confirm is
- * the browser's own, so it works however the app's own dialogs are doing.
+ * submitted: a tap on a header link or a back-swipe asks in the app's own
+ * dialog. (With window.confirm, a browser that answers it without showing it
+ * made the page impossible to leave.) A reload or a closed tab can only be
+ * asked about by the browser itself, through beforeunload.
  */
 function InterviewGuard({ active }: { active: boolean }) {
+  const confirm = useConfirm()
   useBlocker({
-    shouldBlockFn: () =>
-      active &&
-      !window.confirm(
-        'This interview has not been submitted. Leave the page and lose its answers?',
-      ),
+    shouldBlockFn: async () => {
+      if (!active) return false
+      const leave = await confirm({
+        title: 'Leave this interview?',
+        description: 'It has not been submitted, and its answers are lost if you leave.',
+        confirmLabel: 'Leave',
+        cancelLabel: 'Stay',
+        destructive: true,
+      })
+      return !leave
+    },
     enableBeforeUnload: () => active,
   })
   return null

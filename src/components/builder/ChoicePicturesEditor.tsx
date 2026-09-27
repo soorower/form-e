@@ -24,6 +24,7 @@ import type {
 } from '#/lib/questionnaire/types'
 import { readWorkbookPictures } from '#/lib/workbook-pictures'
 import { LocalizedInput } from './LocalizedInput'
+import { useConfirm } from '#/components/ConfirmProvider'
 
 interface ChoicePicturesEditorProps {
   question: ChoiceExperimentQuestion
@@ -42,6 +43,7 @@ const slotId = (attribute: string, slot: PictureSlot) =>
  * that already holds them beside the level names.
  */
 export function ChoicePicturesEditor({ question, languages, onChange }: ChoicePicturesEditorProps) {
+  const confirm = useConfirm()
   const upload = usePictureUpload()
   // Uploads finish after later renders, so they patch the newest question
   // rather than the one they started from, keeping edits made meanwhile.
@@ -79,13 +81,16 @@ export function ChoicePicturesEditor({ question, languages, onChange }: ChoicePi
     setNotice(null)
   }
 
-  function removePictureRow(attribute: ChoiceAttribute) {
+  async function removePictureRow(attribute: ChoiceAttribute) {
     const count = attribute.pictures?.items.length ?? 0
     if (
       count > 0 &&
-      !window.confirm(
-        `Remove the picture row above “${pickText(attribute.label, 'en') || attribute.key}” and its ${count} ${count === 1 ? 'picture' : 'pictures'}?`,
-      )
+      !(await confirm({
+        title: 'Remove this picture row?',
+        description: `The row above “${pickText(attribute.label, 'en') || attribute.key}” and its ${count} ${count === 1 ? 'picture' : 'pictures'} are removed.`,
+        confirmLabel: 'Remove',
+        destructive: true,
+      }))
     ) {
       return
     }

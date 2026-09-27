@@ -31,8 +31,10 @@ import {
 import { LANGUAGE_LABELS, pickText } from '#/lib/questionnaire/factory'
 import type { Questionnaire, ResponseProgress } from '#/lib/questionnaire/types'
 import { startOfToday } from '#/lib/team/stats'
+import { useConfirm } from '#/components/ConfirmProvider'
 
 export function SurveysPage() {
+  const confirm = useConfirm()
   const ready = useConvexReady()
   const paths = useSurveyPaths()
   const { viewer } = useViewer()
@@ -71,11 +73,15 @@ export function SurveysPage() {
     return name ? <Badge variant="outline">{name}</Badge> : null
   }
 
-  function remove(survey: Questionnaire) {
+  async function remove(survey: Questionnaire) {
     const name = pickText(survey.title, survey.defaultLanguage) || 'this survey'
-    if (!window.confirm(`Delete "${name}" and all of its responses? This cannot be undone.`)) {
-      return
-    }
+    const sure = await confirm({
+      title: `Delete “${name}”?`,
+      description: 'The survey and all of its responses are deleted. This cannot be undone.',
+      confirmLabel: 'Delete survey',
+      destructive: true,
+    })
+    if (!sure) return
     void removeSurvey({ id: survey.id })
   }
 

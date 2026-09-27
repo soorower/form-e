@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { ChevronDown, ChevronUp, Copy, Trash2 } from 'lucide-react'
 import { Button } from '#/components/ui/button'
 import {
@@ -34,6 +35,11 @@ interface QuestionCardProps {
   onMove: (direction: -1 | 1) => void
   onDuplicate: () => void
   onDelete: () => void
+  /**
+   * Ask before deleting: the first tap on the bin turns it into "Delete?",
+   * the second deletes. Set for questions that hold anything.
+   */
+  confirmDelete?: boolean
 }
 
 export function QuestionCard({
@@ -47,8 +53,16 @@ export function QuestionCard({
   onMove,
   onDuplicate,
   onDelete,
+  confirmDelete = false,
 }: QuestionCardProps) {
   const Icon = QUESTION_ICONS[question.type]
+  // The bin has been tapped once and is waiting for the second tap.
+  const [armed, setArmed] = useState(false)
+  useEffect(() => {
+    if (!armed) return
+    const disarm = setTimeout(() => setArmed(false), 4000)
+    return () => clearTimeout(disarm)
+  }, [armed])
   const isBlock = question.type === 'choice_experiment'
 
   return (
@@ -94,16 +108,31 @@ export function QuestionCard({
           >
             <Copy />
           </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            aria-label="Delete question"
-            className="text-destructive hover:text-destructive"
-            onClick={onDelete}
-          >
-            <Trash2 />
-          </Button>
+          {armed ? (
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              aria-label={`Confirm deleting question ${index + 1}`}
+              onClick={onDelete}
+              onBlur={() => setArmed(false)}
+              autoFocus
+            >
+              <Trash2 data-icon="inline-start" />
+              Delete?
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label="Delete question"
+              className="text-destructive hover:text-destructive"
+              onClick={() => (confirmDelete ? setArmed(true) : onDelete())}
+            >
+              <Trash2 />
+            </Button>
+          )}
         </CardAction>
       </CardHeader>
 

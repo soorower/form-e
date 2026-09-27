@@ -25,6 +25,7 @@ A form-building and surveying web application focused on **transportation mode c
 ## UI Rules
 
 - **Always use shadcn/ui components and Tailwind CSS** for all UI work. Do not use other component libraries or custom styling approaches.
+- **Never use `window.confirm`.** Some browsers answer it "Cancel" without ever showing it (after "don't let this site show dialogs", or in embedded and home-screen browsers), which once made questions impossible to delete. Ask with `const confirm = useConfirm()` → `await confirm({ title, description, confirmLabel, destructive })` (`src/components/ConfirmProvider.tsx`, a shadcn `AlertDialog` mounted once in `__root.tsx`). A question card asks on the card itself: the first tap on the bin turns it into "Delete?".
 
 ## Key Features
 

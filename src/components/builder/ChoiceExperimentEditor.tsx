@@ -46,6 +46,7 @@ import type {
 } from '#/lib/questionnaire/types'
 import { ChoicePicturesEditor } from './ChoicePicturesEditor'
 import { LocalizedInput } from './LocalizedInput'
+import { useConfirm } from '#/components/ConfirmProvider'
 
 interface ChoiceExperimentEditorProps {
   question: ChoiceExperimentQuestion
@@ -63,6 +64,7 @@ export function ChoiceExperimentEditor({
   languages,
   onChange,
 }: ChoiceExperimentEditorProps) {
+  const confirm = useConfirm()
   const hasCards = question.cards.length > 0
   const [pasted, setPasted] = useState('')
   const [showImport, setShowImport] = useState(!hasCards)
@@ -119,11 +121,18 @@ export function ChoiceExperimentEditor({
     applyTranslation(await file.text())
   }
 
-  function importCards(source: string) {
+  async function importCards(source: string) {
     try {
       const design = parseCardTable(source, question)
       const warnings = importWarnings(question, design)
-      if (warnings.length > 0 && !window.confirm(`${warnings.join('\n\n')}\n\nImport anyway?`)) {
+      if (
+        warnings.length > 0 &&
+        !(await confirm({
+          title: 'Import these cards anyway?',
+          description: warnings.join('\n\n'),
+          confirmLabel: 'Import anyway',
+        }))
+      ) {
         setNotice('The cards were left as they were.')
         setError(null)
         return
@@ -177,12 +186,15 @@ export function ChoiceExperimentEditor({
     importCards(await file.text())
   }
 
-  function clearCards() {
+  async function clearCards() {
     if (
       question.cards.length > 0 &&
-      !window.confirm(
-        `Remove all ${question.cards.length} cards from this section? This cannot be undone.`,
-      )
+      !(await confirm({
+        title: `Remove all ${question.cards.length} cards?`,
+        description: 'They are removed from this section. This cannot be undone.',
+        confirmLabel: 'Remove cards',
+        destructive: true,
+      }))
     ) {
       return
     }

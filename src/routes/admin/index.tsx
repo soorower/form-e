@@ -33,6 +33,7 @@ import { Textarea } from '#/components/ui/textarea'
 import { useConvexReady } from '#/lib/convex/hooks'
 import { pickText } from '#/lib/questionnaire/factory'
 import { cn } from '#/lib/utils'
+import { useConfirm } from '#/components/ConfirmProvider'
 
 export const Route = createFileRoute('/admin/')({
   head: () => ({ meta: [{ title: 'Admin · Form-E' }] }),
@@ -556,6 +557,7 @@ function GroupsTab({ groups }: { groups: Group[] }) {
 }
 
 function GroupPanel({ group }: { group: Group }) {
+  const confirm = useConfirm()
   const updateGroup = useMutation(api.admin.updateGroup)
   const removeGroup = useMutation(api.admin.removeGroup)
   const addMember = useMutation(api.admin.addMember)
@@ -590,10 +592,14 @@ function GroupPanel({ group }: { group: Group }) {
     await run(addMember({ groupId: group.id, email }).then(() => setEmail('')))
   }
 
-  function remove() {
-    const ok = window.confirm(
-      `Delete the group "${group.name}"? Its members lose access. Its surveys are kept and can be assigned to another group.`,
-    )
+  async function remove() {
+    const ok = await confirm({
+      title: `Delete the group “${group.name}”?`,
+      description:
+        'Its members lose access. Its surveys are kept and can be assigned to another group.',
+      confirmLabel: 'Delete group',
+      destructive: true,
+    })
     if (ok) void run(removeGroup({ id: group.id }))
   }
 
