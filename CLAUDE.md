@@ -68,6 +68,8 @@ A form-building and surveying web application focused on **transportation mode c
 
 ## Text and Formatting
 
+- **Answer options are numbered automatically** where respondents see them (single choice, multiple choice, dropdown; tablet, preview, and paper): `numberedOptionLabel` shows "১) কম" / "1) Bus" in the form's digits. An option the creator already numbered by hand ("১) সপ্তাহে…", "2. Train", "(3) Air") keeps its own number. Stored labels and exports are unchanged. Priority choice is not numbered (its 1, 2, 3 are the ranking).
+
 - `LocalizedText` is `{ en, bn, style? }`. `style` (`TextStyle`: bold / italic / underline / align) applies to both languages. `FORM_TEXT_DEFAULTS` in `src/lib/questionnaire/text-style.ts` defines each text's default look; the builder toolbar (`TextStyleToolbar`) and the renderer both resolve against it, so only deviations from the default are stored.
 - The questionnaire header shows logo, title, `institution` (department / university line), then description.
 

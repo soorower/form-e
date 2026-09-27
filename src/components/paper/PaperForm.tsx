@@ -4,6 +4,7 @@ import { attributeSections, columnKey, levelLabel } from '#/lib/questionnaire/ca
 import {
   formatNumber,
   formatSurveyNumber,
+  numberedOptionLabel,
   pickText,
   questionNumbers,
   rankLimit,
@@ -263,16 +264,20 @@ function PaperQuestion({ question, number, lang }: { question: Question; number:
     case 'single_choice':
     case 'dropdown':
       return line(
-        question.options.map((option) => (
-          <Choice key={option.id} label={pickText(option.label, lang)} />
+        question.options.map((option, index) => (
+          <Choice key={option.id} label={numberedOptionLabel(pickText(option.label, lang), index, lang)} />
         )),
       )
     case 'multi_choice':
       return line(
         <>
           <Note>{t('tick all that apply', 'প্রযোজ্য সবগুলোতে টিক দিন')}</Note>
-          {question.options.map((option) => (
-            <Choice key={option.id} square label={pickText(option.label, lang)} />
+          {question.options.map((option, index) => (
+            <Choice
+              key={option.id}
+              square
+              label={numberedOptionLabel(pickText(option.label, lang), index, lang)}
+            />
           ))}
         </>,
       )

@@ -6,6 +6,7 @@ import {
   createQuestionnaire,
   duplicateQuestion,
   formatSurveyNumber,
+  numberedOptionLabel,
   pickText,
 } from './factory'
 
@@ -104,5 +105,25 @@ describe('survey numbers and team', () => {
     expect(
       activeEnumerators({ enumerators: ['Ikra', 'Nawal', ' Ikra ', 'Sorower'] }),
     ).toEqual(['Ikra', 'Nawal', 'Sorower'])
+  })
+})
+
+describe('numberedOptionLabel', () => {
+  it('numbers an answer in the form\'s own digits', () => {
+    expect(numberedOptionLabel('কম', 0, 'bn')).toBe('১) কম')
+    expect(numberedOptionLabel('বেশি', 2, 'bn')).toBe('৩) বেশি')
+    expect(numberedOptionLabel('Bus', 1, 'en')).toBe('2) Bus')
+  })
+
+  it('leaves answers the creator numbered by hand as they are', () => {
+    expect(numberedOptionLabel('১) সপ্তাহে কমপক্ষে একবার', 0, 'bn')).toBe('১) সপ্তাহে কমপক্ষে একবার')
+    expect(numberedOptionLabel('2. Train', 1, 'en')).toBe('2. Train')
+    expect(numberedOptionLabel('(3) Air', 2, 'en')).toBe('(3) Air')
+    expect(numberedOptionLabel('', 0, 'en')).toBe('')
+  })
+
+  it('does not mistake an answer that merely starts with a number for a numbered one', () => {
+    expect(numberedOptionLabel('30,000 Taka or less', 0, 'en')).toBe('1) 30,000 Taka or less')
+    expect(numberedOptionLabel('৬০ বছর বা তার বেশি', 5, 'bn')).toBe('৬) ৬০ বছর বা তার বেশি')
   })
 })

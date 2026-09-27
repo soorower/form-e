@@ -79,6 +79,21 @@ export function formatNumber(value: number, lang: Lang): string {
   return lang === 'bn' ? toBanglaDigits(plain) : plain
 }
 
+/** "1)", "১.", "(2)", "3 -": an answer the creator already numbered by hand. */
+const NUMBERED_OPTION = /^\s*\(?[0-9০-৯]+\s*[).।:\-]/
+
+/**
+ * An answer option as respondents see it, numbered "1) …" in the form's
+ * digits ("১) কম"), the way a printed questionnaire numbers its answers.
+ * Options the creator already numbered by hand keep their own number, so a
+ * question typed "১) সপ্তাহে কমপক্ষে একবার" is not numbered twice. Only what
+ * is shown changes: the option's stored label, and the exports, stay as typed.
+ */
+export function numberedOptionLabel(label: string, index: number, lang: Lang): string {
+  if (label.trim() === '' || NUMBERED_OPTION.test(label)) return label
+  return `${formatNumber(index + 1, lang)}) ${label}`
+}
+
 export interface QuestionTypeMeta {
   type: QuestionType
   label: string

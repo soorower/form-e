@@ -7,7 +7,12 @@ import { Label } from '#/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '#/components/ui/radio-group'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '#/components/ui/select'
 import { Textarea } from '#/components/ui/textarea'
-import { formatNumber, pickText, rankLimit } from '#/lib/questionnaire/factory'
+import {
+  formatNumber,
+  numberedOptionLabel,
+  pickText,
+  rankLimit,
+} from '#/lib/questionnaire/factory'
 import { FORM_TEXT_DEFAULTS, localizedStyleClass } from '#/lib/questionnaire/text-style'
 import type {
   AnswerValue,
@@ -221,8 +226,8 @@ function Control({ question, lang, value, onChange, inputId, labelId }: ControlP
           onValueChange={(next) => onChange(String(next))}
           className="gap-2"
         >
-          {question.options.map((option) => (
-            <ChoiceRow key={option.id} text={pickText(option.label, lang)}>
+          {question.options.map((option, index) => (
+            <ChoiceRow key={option.id} text={numberedOptionLabel(pickText(option.label, lang), index, lang)}>
               <RadioGroupItem value={option.id} />
             </ChoiceRow>
           ))}
@@ -232,8 +237,8 @@ function Control({ question, lang, value, onChange, inputId, labelId }: ControlP
       const selected = asList(value)
       return (
         <div role="group" aria-labelledby={labelId} className="grid gap-2">
-          {question.options.map((option) => (
-            <ChoiceRow key={option.id} text={pickText(option.label, lang)}>
+          {question.options.map((option, index) => (
+            <ChoiceRow key={option.id} text={numberedOptionLabel(pickText(option.label, lang), index, lang)}>
               <Checkbox
                 checked={selected.includes(option.id)}
                 onCheckedChange={(checked) =>
@@ -365,7 +370,10 @@ interface DropdownControlProps {
 
 function DropdownControl({ question, lang, value, onChange, inputId }: DropdownControlProps) {
   const items = Object.fromEntries(
-    question.options.map((option) => [option.id, pickText(option.label, lang) || '—']),
+    question.options.map((option, index) => [
+      option.id,
+      numberedOptionLabel(pickText(option.label, lang), index, lang) || '—',
+    ]),
   )
   return (
     <Select value={value || null} onValueChange={(next) => onChange(next ?? '')} items={items}>
