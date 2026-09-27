@@ -111,6 +111,29 @@ export default defineSchema({
     .index('by_questionnaire', ['questionnaireId'])
     .index('by_response', ['responseId']),
 
+  // Links a team member sends to anyone at all, who then answers the survey
+  // on their own phone or computer without signing in (`/r/<token>`). One
+  // per person per survey; the response is credited to whoever made it.
+  // See convex/shareLinks.ts.
+  shareLinks: defineTable({
+    token: v.string(),
+    questionnaireId: v.string(),
+    createdBy: v.id('users'),
+    createdAt: v.number(),
+    // Turned off by its owner: the link then says so and takes no answers.
+    active: v.boolean(),
+    // A link for one survey number (106 sent to one person), made by a
+    // builder or the admin: that number is set aside for it, the response is
+    // recorded under it, and the link takes one answer. Absent on a person's
+    // everyday link, whose answers take their next number.
+    serial: v.optional(v.number()),
+    // The response a numbered link was answered with; it then takes no more.
+    responseId: v.optional(v.string()),
+  })
+    .index('by_token', ['token'])
+    .index('by_questionnaire', ['questionnaireId'])
+    .index('by_creator', ['createdBy', 'questionnaireId']),
+
   // Team chat: one room per questionnaire (= one team).
   messages: defineTable({
     questionnaireId: v.string(),

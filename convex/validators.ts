@@ -270,4 +270,7 @@ export const responseFields = {
   // Typed in from a printed paper form under that form's own survey number,
   // rather than collected on a tablet. Absent on tablet responses.
   paper: v.optional(v.boolean()),
+  // Answered by the respondent themselves through a shared link
+  // (convex/shareLinks.ts), credited to the team member who shared it.
+  link: v.optional(v.boolean()),
 }

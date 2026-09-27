@@ -14,6 +14,8 @@ import Header from '../components/Header'
 
 import appCss from '../styles.css?url'
 import { ConfirmProvider } from '#/components/ConfirmProvider'
+import { OutboxProvider } from '#/components/offline/OutboxProvider'
+import { AppUpdateBanner, ServiceWorkerRegistration } from '#/components/offline/ServiceWorker'
 
 const THEME_INIT_SCRIPT = `(function(){try{var stored=window.localStorage.getItem('theme');var mode=(stored==='light'||stored==='dark'||stored==='auto')?stored:'auto';var prefersDark=window.matchMedia('(prefers-color-scheme: dark)').matches;var resolved=mode==='auto'?(prefersDark?'dark':'light'):mode;var root=document.documentElement;root.classList.remove('light','dark');root.classList.add(resolved);if(mode==='auto'){root.removeAttribute('data-theme')}else{root.setAttribute('data-theme',mode)}root.style.colorScheme=resolved;}catch(e){}})();`
 
@@ -49,10 +51,15 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   component: RootLayout,
 })
 
-/** The app's chrome. The admin area brings its own header (routes/admin.tsx). */
+/**
+ * The app's chrome. The admin area brings its own header (routes/admin.tsx),
+ * and a share link's page (/r/…) has none: its reader is a respondent, not a
+ * user of the app.
+ */
 function RootLayout() {
-  const adminArea = useLocation({ select: (location) => isAdminPath(location.pathname) })
-  if (adminArea) return <Outlet />
+  const pathname = useLocation({ select: (location) => location.pathname })
+  if (isAdminPath(pathname)) return <Outlet />
+  const respondent = pathname.startsWith('/r/')
   return (
     <>
       {/* Without the deployment URL every page just loads for ever; say why. */}
@@ -65,9 +72,9 @@ function RootLayout() {
           hosting project's environment) and rebuild.
         </p>
       )}
-      <Header />
+      {!respondent && <Header />}
       <Outlet />
-      <Footer />
+      {!respondent && <Footer />}
     </>
   )
 }
@@ -91,7 +98,14 @@ function RootDocument({ children }: { children: React.ReactNode }) {
             typeof window !== 'undefined' && !isAdminPath(window.location.pathname)
           }
         >
-          <ConfirmProvider>{children}</ConfirmProvider>
+          <ConfirmProvider>
+            {/* Sends the responses kept on this device, from any page. */}
+            <OutboxProvider area="app">
+              {children}
+              <AppUpdateBanner />
+            </OutboxProvider>
+          </ConfirmProvider>
+          <ServiceWorkerRegistration />
         </ConvexAuthProvider>
         <Scripts />
       </body>

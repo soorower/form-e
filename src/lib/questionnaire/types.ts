@@ -430,6 +430,8 @@ export interface SurveyResponse {
   receivedAt?: number
   /** Typed in from a printed paper form, under the number printed on it. */
   paper?: boolean
+  /** Answered by the respondent through a team member's share link. */
+  link?: boolean
 }
 
 /** What the team sees of a response: who collected it and when, never the answers. */

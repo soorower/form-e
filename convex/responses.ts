@@ -11,8 +11,16 @@ import {
   type CardCounts,
 } from './cardBalance'
 import { recordSummary } from './responseSummaries'
-import { inRange, pickSerial, planRowForSerial, type SerialRange } from './serials'
+import { openShareLink, pinnedSerials } from './shareLinks'
 import {
+  formatSurveyNumber,
+  inRange,
+  pickSerial,
+  planRowForSerial,
+  type SerialRange,
+} from './serials'
+import {
+  accessFor,
   canAccess,
   canBuild,
   canView,
@@ -52,10 +60,6 @@ function cleanDetails(details: RespondentDetails | undefined): RespondentDetails
   return Object.keys(cleaned).length > 0 ? cleaned : undefined
 }
 
-/** "ACBUS-" + 7 -> "ACBUS-007". Mirrors formatSurveyNumber in the client. */
-function formatSurveyNumber(prefix: string, serial: number): string {
-  return `${prefix}${String(Math.max(0, serial)).padStart(3, '0')}`
-}
 
 async function highestSerial(
   ctx: QueryCtx | MutationCtx,
@@ -100,8 +104,10 @@ async function nextFreeSerial(
   except?: string,
 ): Promise<number> {
   const ranges = await surveyRanges(ctx, questionnaireId)
+  // Numbers set aside for a numbered share link: skipped, never counted on from.
+  const pinned = await pinnedSerials(ctx, questionnaireId)
   const taken = new Set<number>()
-  if (ranges.length === 0) {
+  if (ranges.length === 0 && pinned.size === 0) {
     // Only the highest matters then, and the index gives it in one read.
     taken.add(await highestSerial(ctx, questionnaireId))
   } else {
@@ -123,7 +129,68 @@ async function nextFreeSerial(
   taken.delete(0)
   const email = access && isApproved(access) ? trustedEmail(access.user) : ''
   const own = email ? ranges.find((range) => range.email === email) : undefined
-  return pickSerial(taken, ranges, own)
+  return pickSerial(taken, ranges, own, pinned)
+}
+
+/** The block of survey numbers the admin gave this account on this survey, if any. */
+async function ownRange(
+  ctx: QueryCtx | MutationCtx,
+  questionnaireId: string,
+  access: Access | null,
+): Promise<SerialRange | null> {
+  const email = access && isApproved(access) ? trustedEmail(access.user) : ''
+  if (!email) return null
+  const range = (await surveyRanges(ctx, questionnaireId)).find((each) => each.email === email)
+  return range ? { start: range.start, end: range.end } : null
+}
+
+/**
+ * Numbers nobody else may be given: recorded ones, and ones held by
+ * interviews going on now (other than `except`, the caller's own).
+ */
+async function takenSerials(
+  ctx: QueryCtx | MutationCtx,
+  questionnaireId: string,
+  now: number,
+  except?: string,
+): Promise<Set<number>> {
+  const taken = new Set<number>()
+  const summaries = await ctx.db
+    .query('responseSummaries')
+    .withIndex('by_questionnaire', (q) => q.eq('questionnaireId', questionnaireId))
+    .collect()
+  for (const summary of summaries) taken.add(summary.serial)
+  const draws = await ctx.db
+    .query('cardDraws')
+    .withIndex('by_questionnaire', (q) => q.eq('questionnaireId', questionnaireId))
+    .collect()
+  for (const draw of draws) {
+    if (draw.serial === undefined || draw.responseId === except) continue
+    if (now - draw.drawnAt > CARD_RESERVATION_MS) continue
+    taken.add(draw.serial)
+  }
+  for (const serial of await pinnedSerials(ctx, questionnaireId)) taken.add(serial)
+  return taken
+}
+
+/**
+ * Whether a number a tablet picked for itself offline, from its surveyor's
+ * own block, can be kept: it is in that block and still free. When it is
+ * not (the same surveyor on a second tablet got there first), the response
+ * is numbered as any other would be.
+ */
+async function claimIsFree(
+  ctx: QueryCtx | MutationCtx,
+  questionnaireId: string,
+  access: Access | null,
+  serial: number,
+  responseId: string,
+  now: number,
+): Promise<boolean> {
+  if (!Number.isInteger(serial) || serial < 1) return false
+  const own = await ownRange(ctx, questionnaireId, access)
+  if (!own || !inRange(serial, own)) return false
+  return !(await takenSerials(ctx, questionnaireId, now, responseId)).has(serial)
 }
 
 /**
@@ -198,14 +265,7 @@ async function paperEntry(
   serial: number,
 ) {
   const ranges = await surveyRanges(ctx, questionnaire.id)
-  const ownerRange = ranges.find((range) => inRange(serial, range)) ?? null
-  const accounts = ownerRange
-    ? await ctx.db
-        .query('users')
-        .withIndex('email', (q) => q.eq('email', ownerRange.email))
-        .collect()
-    : []
-  const owner = accounts.find((account) => roleOf(account) === 'surveyor') ?? accounts[0] ?? null
+  const owner = await rangeOwner(ctx, ranges, serial)
   const number = formatSurveyNumber(questionnaire.surveyCodePrefix, serial)
   const taken =
     (await ctx.db
@@ -229,12 +289,33 @@ async function paperEntry(
     problem = 'You do not have access to this survey.'
   }
   if (!problem && taken) problem = `${number} is already recorded.`
+  if (!problem && (await pinnedSerials(ctx, questionnaire.id)).has(serial)) {
+    problem = `${number} is set aside for a survey link.`
+  }
   return {
     number,
     taken,
     problem,
     owner: owner ? { user: owner, name: displayName(owner), code: owner.surveyorCode ?? null } : null,
   }
+}
+
+/**
+ * The account whose block of numbers holds `serial` (the surveyor-role row
+ * when one address has two accounts), or null outside every block.
+ */
+async function rangeOwner(
+  ctx: QueryCtx | MutationCtx,
+  ranges: (SerialRange & { email: string })[],
+  serial: number,
+): Promise<Doc<'users'> | null> {
+  const ownerRange = ranges.find((range) => inRange(serial, range))
+  if (!ownerRange) return null
+  const accounts = await ctx.db
+    .query('users')
+    .withIndex('email', (q) => q.eq('email', ownerRange.email))
+    .collect()
+  return accounts.find((account) => roleOf(account) === 'surveyor') ?? accounts[0] ?? null
 }
 
 /**
@@ -317,9 +398,40 @@ export const progress = query({
  * hands out cards, and `submit` otherwise decides it.
  */
 export const nextSerial = query({
-  args: { questionnaireId: v.string() },
-  handler: async (ctx, { questionnaireId }) =>
-    nextFreeSerial(ctx, questionnaireId, await viewerAccess(ctx), Date.now()),
+  // `shareToken`: the page a share link opens, which shows the link's own
+  // number, or the next number of whoever shared it.
+  args: { questionnaireId: v.string(), shareToken: v.optional(v.string()) },
+  handler: async (ctx, { questionnaireId, shareToken }) => {
+    const shared = shareToken === undefined ? null : await openShareLink(ctx, shareToken)
+    if (shared?.ok && shared.link.serial !== undefined) return shared.link.serial
+    return nextFreeSerial(
+      ctx,
+      questionnaireId,
+      shared?.ok ? await accessFor(ctx, shared.sharer) : shared ? null : await viewerAccess(ctx),
+      Date.now(),
+    )
+  },
+})
+
+/**
+ * What a surveyor's tablet keeps so it can number interviews with no
+ * connection: their own block of numbers on this survey and the numbers in it
+ * already taken (`except`: the interview on screen, whose held number is its
+ * own). Null for anyone without a block; their offline interviews are
+ * numbered when they reach the server.
+ */
+export const offlineKit = query({
+  args: { questionnaireId: v.string(), except: v.optional(v.string()) },
+  handler: async (ctx, { questionnaireId, except }) => {
+    const own = await ownRange(ctx, questionnaireId, await viewerAccess(ctx))
+    if (!own) return null
+    const taken = await takenSerials(ctx, questionnaireId, Date.now(), except)
+    return {
+      start: own.start,
+      end: own.end,
+      taken: [...taken].filter((serial) => inRange(serial, own)).sort((a, b) => a - b),
+    }
+  },
 })
 
 /**
@@ -342,6 +454,13 @@ export const submit = mutation({
     // A printed paper form being typed in: recorded under the number printed
     // on it, with the cards that number was printed with.
     paperSerial: v.optional(v.number()),
+    // Answered by the respondent through a team member's share link
+    // (convex/shareLinks.ts): credited to that member, whoever is signed in.
+    shareToken: v.optional(v.string()),
+    // The number the tablet showed, picked from the surveyor's own block
+    // (see `offlineKit`). Kept when it is still free, so an interview done
+    // with no connection keeps the number it was done under.
+    claimedSerial: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const duplicate = await ctx.db
@@ -366,7 +485,8 @@ export const submit = mutation({
     // Public, so the payload is checked here: a response to a deleted survey
     // has nowhere to go, and junk must not be able to fill the table.
     if (!questionnaire) throw new ConvexError('This survey no longer exists.')
-    const { respondent, answers, collectedAt, paperSerial, ...rest } = args
+    const { respondent, answers, collectedAt, paperSerial, shareToken, claimedSerial, ...rest } =
+      args
     if (typeof answers !== 'object' || answers === null || Array.isArray(answers)) {
       throw new ConvexError('The answers are not in the shape the app sends.')
     }
@@ -393,24 +513,70 @@ export const submit = mutation({
         ? null
         : await paperEntry(ctx, questionnaire, access, paperSerial)
     if (paper?.problem) throw new ConvexError(paper.problem)
+    // A link that was turned off after the page opened takes nothing more.
+    const shared =
+      shareToken === undefined || paper ? null : await openShareLink(ctx, shareToken)
+    if (shared && !shared.ok) throw new ConvexError(shared.problem)
+    if (shared?.ok && shared.questionnaire.id !== args.questionnaireId) {
+      throw new ConvexError('This survey link is for a different survey.')
+    }
+    const sharer = shared?.ok ? shared.sharer : null
+    // A numbered link is recorded under its own number, credited to the
+    // surveyor whose block holds it, or else to whoever made the link.
+    const linkSerial = shared?.ok ? shared.link.serial : undefined
+    const linkCredit =
+      linkSerial === undefined
+        ? sharer
+        : ((await rangeOwner(ctx, await surveyRanges(ctx, questionnaire.id), linkSerial)) ?? sharer)
+    if (
+      linkSerial !== undefined &&
+      (await ctx.db
+        .query('responses')
+        .withIndex('by_serial', (q) =>
+          q.eq('questionnaireId', args.questionnaireId).eq('serial', linkSerial),
+        )
+        .first())
+    ) {
+      throw new ConvexError('This survey number has already been answered.')
+    }
+    const claimed =
+      paperSerial === undefined &&
+      !sharer &&
+      claimedSerial !== undefined &&
+      (await claimIsFree(ctx, args.questionnaireId, access, claimedSerial, args.id, now))
     const serial =
       paperSerial !== undefined
         ? paperSerial
-        : heldFree && held !== undefined
+        : linkSerial !== undefined
+          ? linkSerial
+          : claimed && claimedSerial !== undefined
+          ? claimedSerial
+          : heldFree && held !== undefined
           ? held
-          : await nextFreeSerial(ctx, args.questionnaireId, access, now, args.id)
+          : // An answer through a share link takes the next number of whoever
+            // shared it, as their own interview would, so their tablet goes
+            // on with the number after it and nothing is used twice.
+            await nextFreeSerial(
+              ctx,
+              args.questionnaireId,
+              sharer ? await accessFor(ctx, sharer) : access,
+              now,
+              args.id,
+            )
     const surveyNumber = formatSurveyNumber(questionnaire.surveyCodePrefix, serial)
 
     // A signed-in, approved account is stamped onto the response. A
     // surveyor's responses always carry their own name, whatever the tablet
     // sent, so the leaderboard cannot be gamed by typing another name.
     const approved = access && isApproved(access) ? access : null
-    const collector = paper?.owner?.user ?? approved?.user ?? null
+    const collector = paper?.owner?.user ?? linkCredit ?? approved?.user ?? null
     const signedIn = collector ? { user: collector, role: roleOf(collector) } : null
     const enumerator =
       paper?.owner
         ? paper.owner.name
-        : signedIn?.role === 'surveyor'
+        : linkCredit
+          ? displayName(linkCredit)
+          : signedIn?.role === 'surveyor'
           ? displayName(signedIn.user)
           : args.enumerator.trim().slice(0, MAX_NAME_LENGTH)
     const details = cleanDetails(respondent)
@@ -432,9 +598,14 @@ export const submit = mutation({
       submittedAt: collectedAt === undefined ? now : Math.min(collectedAt, now),
       receivedAt: now,
       ...(paper ? { paper: true } : {}),
+      ...(sharer ? { link: true } : {}),
     }
     await ctx.db.insert('responses', response)
     await recordSummary(ctx, response)
+    // A numbered link takes one answer; its number stays set aside.
+    if (shared?.ok && linkSerial !== undefined) {
+      await ctx.db.patch(shared.link._id, { responseId: args.id })
+    }
     return { serial, surveyNumber }
   },
 })
@@ -481,6 +652,120 @@ export const importMany = mutation({
 })
 
 /**
+ * Takes in the responses a tablet could not send, from the backup file it
+ * saved ("Download unsent responses"), on any builder's computer. Each is
+ * recorded as the tablet would have sent it: a paper form under its printed
+ * number, an interview under the number it was done under when that is
+ * still free in its surveyor's block, otherwise under the next number
+ * outside every block; the surveyor it was collected by is stamped on it.
+ * One already on the server (the tablet did get it through) is left alone.
+ */
+export const importBackup = mutation({
+  args: {
+    responses: v.array(
+      v.object({
+        id: v.string(),
+        questionnaireId: v.string(),
+        enumerator: v.string(),
+        language: lang,
+        respondent: v.optional(respondentDetails),
+        answers: v.any(),
+        collectedAt: v.number(),
+        claimedSerial: v.optional(v.number()),
+        paperSerial: v.optional(v.number()),
+        // The users id of the account the tablet was signed in to.
+        surveyorId: v.optional(v.string()),
+      }),
+    ),
+  },
+  handler: async (ctx, { responses }) => {
+    const access = await requireBuilder(ctx)
+    const now = Date.now()
+    const results: {
+      id: string
+      status: 'added' | 'already' | 'skipped'
+      surveyNumber?: string
+      reason?: string
+    }[] = []
+    for (const entry of responses) {
+      const existing = await ctx.db
+        .query('responses')
+        .withIndex('by_app_id', (q) => q.eq('id', entry.id))
+        .unique()
+      if (existing) {
+        results.push({ id: entry.id, status: 'already', surveyNumber: existing.surveyNumber })
+        continue
+      }
+      const questionnaire = await questionnaireByAppId(ctx, entry.questionnaireId)
+      if (!questionnaire || !canAccess(access, questionnaire)) {
+        results.push({
+          id: entry.id,
+          status: 'skipped',
+          reason: questionnaire ? 'You do not have access to this survey.' : 'This survey no longer exists.',
+        })
+        continue
+      }
+      const { answers } = entry
+      if (
+        typeof answers !== 'object' ||
+        answers === null ||
+        Array.isArray(answers) ||
+        JSON.stringify(answers).length > MAX_ANSWERS_BYTES
+      ) {
+        results.push({ id: entry.id, status: 'skipped', reason: 'The answers could not be read.' })
+        continue
+      }
+
+      const surveyorId = entry.surveyorId ? ctx.db.normalizeId('users', entry.surveyorId) : null
+      const collector = surveyorId ? await ctx.db.get(surveyorId) : null
+      const collectorAccess = collector ? await accessFor(ctx, collector) : null
+      const paperFree =
+        entry.paperSerial !== undefined &&
+        Number.isInteger(entry.paperSerial) &&
+        entry.paperSerial >= 1 &&
+        !(await takenSerials(ctx, entry.questionnaireId, now, entry.id)).has(entry.paperSerial)
+      const claimed =
+        !paperFree &&
+        entry.claimedSerial !== undefined &&
+        (await claimIsFree(ctx, entry.questionnaireId, collectorAccess, entry.claimedSerial, entry.id, now))
+      const serial = paperFree
+        ? entry.paperSerial!
+        : claimed
+          ? entry.claimedSerial!
+          : await nextFreeSerial(ctx, entry.questionnaireId, null, now, entry.id)
+      const surveyNumber = formatSurveyNumber(questionnaire.surveyCodePrefix, serial)
+      const details = cleanDetails(entry.respondent)
+      const response = {
+        id: entry.id,
+        questionnaireId: entry.questionnaireId,
+        language: entry.language,
+        answers,
+        enumerator:
+          collector && roleOf(collector) === 'surveyor'
+            ? displayName(collector)
+            : entry.enumerator.trim().slice(0, MAX_NAME_LENGTH),
+        ...(details ? { respondent: details } : {}),
+        ...(collector
+          ? {
+              surveyorId: collector._id,
+              ...(collector.surveyorCode ? { surveyorCode: collector.surveyorCode } : {}),
+            }
+          : {}),
+        serial,
+        surveyNumber,
+        submittedAt: Math.min(entry.collectedAt, now),
+        receivedAt: now,
+        ...(paperFree ? { paper: true } : {}),
+      }
+      await ctx.db.insert('responses', response)
+      await recordSummary(ctx, response)
+      results.push({ id: entry.id, status: 'added', surveyNumber })
+    }
+    return results
+  },
+})
+
+/**
  * Hands an interview its cards for every balanced choice-experiment block:
  * the ones used least so far, counting the responses recorded and the cards
  * other tablets are showing right now. Convex runs mutations one after the
@@ -489,8 +774,15 @@ export const importMany = mutation({
  * each other. Asking again with the same response id returns the same cards.
  */
 export const drawCards = mutation({
-  args: { questionnaireId: v.string(), responseId: v.string() },
-  handler: async (ctx, { questionnaireId, responseId }) => {
+  // `shareToken`: answered through a share link, so the number held is the
+  // next one of whoever shared it, whoever happens to be signed in (as
+  // `submit` does).
+  args: {
+    questionnaireId: v.string(),
+    responseId: v.string(),
+    shareToken: v.optional(v.string()),
+  },
+  handler: async (ctx, { questionnaireId, responseId, shareToken }) => {
     const held = await ctx.db
       .query('cardDraws')
       .withIndex('by_response', (q) => q.eq('responseId', responseId))
@@ -522,13 +814,22 @@ export const drawCards = mutation({
 
     // The interview's survey number is held now, not at submit, because a
     // planned block's row follows it.
-    const serial = await nextFreeSerial(
-      ctx,
-      questionnaireId,
-      await viewerAccess(ctx),
-      now,
-      responseId,
-    )
+    const shared = shareToken === undefined ? null : await openShareLink(ctx, shareToken)
+    const serial =
+      shared?.ok && shared.link.serial !== undefined
+        ? // A numbered link's number, set aside for it when it was made.
+          shared.link.serial
+        : await nextFreeSerial(
+            ctx,
+            questionnaireId,
+            shared?.ok
+              ? await accessFor(ctx, shared.sharer)
+              : shared
+                ? null
+                : await viewerAccess(ctx),
+            now,
+            responseId,
+          )
 
     // One plan row for the whole interview, so every planned block shows that
     // same row of the creator's sheet: with three blocks of three, row 7 gives

@@ -1,8 +1,7 @@
 import { Link, useBlocker, useNavigate } from '@tanstack/react-router'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, FileText } from 'lucide-react'
-import { useMutation, useQuery } from 'convex/react'
-import { ConvexError } from 'convex/values'
+import { ArrowLeft, CloudOff, FileText, HardDriveDownload } from 'lucide-react'
+import { useConvex, useMutation, useQuery } from 'convex/react'
 import { api } from '../../../convex/_generated/api'
 import { Button } from '#/components/ui/button'
 import { Input } from '#/components/ui/input'
@@ -13,27 +12,25 @@ import {
   type QuestionnairePlanExposure,
   type SubmitOutcome,
 } from '#/components/renderer/QuestionnaireRenderer'
-import { useSurveyPaths } from '#/components/auth/area'
+import { useArea, useSurveyPaths } from '#/components/auth/area'
 import { useConfirm } from '#/components/ConfirmProvider'
+import { useOutbox } from '#/components/offline/OutboxProvider'
+import { UnsentPanel } from '#/components/offline/UnsentPanel'
+import { useOfflineSurvey } from '#/hooks/useOfflineSurvey'
 import { useViewer } from '#/hooks/useViewer'
 import { useConvexReady } from '#/lib/convex/hooks'
 import { decodeQuestionnaire } from '#/lib/convex/questionnaire-codec'
-import { encodeAnswers } from '#/lib/convex/response-codec'
+import { offlineSerial, type OfflineExposure } from '#/lib/offline/surveys'
 import { formatSurveyNumber, uid } from '#/lib/questionnaire/factory'
 import {
-  RefusedResponseError,
-  clearRefused,
   forgetOpenInterview,
-  markRefused,
   queueResponse,
-  readOutbox,
   recallOpenInterview,
   rememberOpenInterview,
-  removeFromOutbox,
   type PendingResponse,
 } from '#/lib/questionnaire/outbox'
 import { paperScenarios } from '#/lib/questionnaire/paper'
-import { followsPlan } from '#/lib/questionnaire/scenario-plan'
+import { findPlanRow, followsPlan, planRowForSerial } from '#/lib/questionnaire/scenario-plan'
 import { getDeviceEnumerator, setDeviceEnumerator } from '#/lib/questionnaire/storage'
 import type { SurveyResponse } from '#/lib/questionnaire/types'
 
@@ -61,9 +58,21 @@ export function FillPage({
   surveyId,
   steps,
   paperSerial,
+  share,
 }: {
   surveyId: string
   steps?: boolean
+  /**
+   * Opened through a team member's share link (`/r/<token>`): the respondent
+   * answers on their own, sees nothing of the team's tools, and the response
+   * is credited to `sharedBy`.
+   */
+  share?: {
+    token: string
+    sharedBy: string
+    /** A link for one survey number (106 sent to one person): that number. */
+    serial?: number | null
+  }
   /**
    * Typing in the printed paper form with this survey number: the response
    * keeps that number and shows the cards printed on the form.
@@ -71,14 +80,18 @@ export function FillPage({
   paperSerial?: number
 }) {
   const paths = useSurveyPaths()
+  const area = useArea()
   const navigate = useNavigate()
-  const confirm = useConfirm()
   const ready = useConvexReady()
-  const stored = useQuery(api.questionnaires.get, ready ? { id: surveyId } : 'skip')
-  // Decoded once per server row: decoding on every render made a new object
-  // each time, and everything keyed on it re-ran for nothing.
-  const questionnaire = useMemo(() => decodeQuestionnaire(stored), [stored])
-  const serial = useQuery(api.responses.nextSerial, ready ? { questionnaireId: surveyId } : 'skip')
+  const client = useConvex() as ReturnType<typeof useConvex> | null | undefined
+  const liveStored = useQuery(api.questionnaires.get, ready ? { id: surveyId } : 'skip')
+  // Through a share link: the link's own number, or the sharer's next one.
+  const serial = useQuery(
+    api.responses.nextSerial,
+    ready
+      ? { questionnaireId: surveyId, ...(share ? { shareToken: share.token } : {}) }
+      : 'skip',
+  )
   const paperCheck = useQuery(
     api.responses.paperCheck,
     ready && paperSerial !== undefined ? { questionnaireId: surveyId, serial: paperSerial } : 'skip',
@@ -86,10 +99,18 @@ export function FillPage({
   // Paper numbers typed in on this page: once recorded, the check above says
   // "already recorded", which must not replace the confirmation screen.
   const [enteredHere, setEnteredHere] = useState<number | null>(null)
-  const submit = useMutation(api.responses.submit)
   const drawCards = useMutation(api.responses.drawCards)
   const abandonDraw = useMutation(api.responses.abandonDraw)
-  const { viewer, isSurveyor, canBuild, loading: viewerLoading } = useViewer()
+  const {
+    viewer,
+    isSurveyor,
+    canBuild,
+    loading: viewerLoading,
+    offline: viewerOffline,
+  } = useViewer()
+  // Responses kept on this device until the server has them; the provider
+  // (components/offline/OutboxProvider) sends them from any page.
+  const { pending: outbox, send } = useOutbox()
   const [enumerator, setEnumerator] = useState('')
   // Whether the interview on screen has answers that are not submitted yet.
   const [dirty, setDirty] = useState(false)
@@ -103,16 +124,40 @@ export function FillPage({
     sets: QuestionnaireCardDraws | null
     serial?: number
   } | null>(null)
-  // Responses kept on this device: not confirmed by the server yet, or
-  // refused by it (those carry the reason and wait for a deliberate retry).
-  const [outbox, setOutbox] = useState<PendingResponse[]>([])
-  const waiting = outbox.filter((response) => response.refused === undefined).length
-  const refused = outbox.filter((response) => response.refused !== undefined)
-  const inFlight = useRef(new Set<string>())
+  // The number the interview on screen is done under, once known: the one the
+  // server held with its cards, or the next free one in the surveyor's own
+  // block. Fixed for the whole interview, so it never changes halfway through.
+  const [fixedSerial, setFixedSerial] = useState<{ id: string; serial: number } | null>(null)
   // Interviews that reached Submit. Their cards are accounted for by the
   // response (or by the outbox copy waiting to be sent), so they are never
   // handed back.
   const submitted = useRef(new Set<string>())
+
+  // The tablet's own interviews are numbered from the surveyor's block; a
+  // paper form keeps its printed number and a share link is numbered by the server.
+  const numbered = paperSerial === undefined && !share
+  // The surveyor's block and the numbers in it already taken, kept on the
+  // tablet so interviews can be numbered with no connection.
+  const liveKit = useQuery(
+    api.responses.offlineKit,
+    ready && numbered ? { questionnaireId: surveyId, except: interviewId } : 'skip',
+  )
+  const [fetchedExposure, setFetchedExposure] = useState<OfflineExposure | undefined>(undefined)
+
+  // The server's copy of the survey, or the one saved on this tablet when the
+  // server does not answer; every copy the server sends is saved for next time.
+  const offline = useOfflineSurvey({
+    surveyId,
+    liveStored,
+    // Only once the account is known, so the block is saved under the right one.
+    liveKit: numbered && !viewerLoading ? liveKit : undefined,
+    kitOwner: viewer?.id ?? null,
+    liveExposure: fetchedExposure,
+  })
+  const stored = offline.stored
+  // Decoded once per server row: decoding on every render made a new object
+  // each time, and everything keyed on it re-ran for nothing.
+  const questionnaire = useMemo(() => decodeQuestionnaire(stored), [stored])
 
   useEffect(() => {
     setEnumerator(getDeviceEnumerator())
@@ -167,6 +212,23 @@ export function FillPage({
     ready && serverDraws && gaveUp ? { questionnaireId: surveyId } : 'skip',
   )
 
+  // The same counts read once (not subscribed) while the page is online, and
+  // saved on the tablet, for the interviews it may have to do offline later.
+  useEffect(() => {
+    if (!ready || !serverDraws || typeof client?.query !== 'function') return
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return
+    let cancelled = false
+    client
+      .query(api.responses.cardExposure, { questionnaireId: surveyId })
+      .then((counts) => {
+        if (!cancelled) setFetchedExposure(counts)
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [ready, serverDraws, client, surveyId])
+
   /**
    * These blocks get their cards from the server, which counts what every
    * tablet has shown and is showing, so no two interviews starting together
@@ -188,7 +250,11 @@ export function FillPage({
       },
       offline ? 0 : DRAW_TIMEOUT_MS,
     )
-    drawCards({ questionnaireId: surveyId, responseId: interviewId })
+    drawCards({
+      questionnaireId: surveyId,
+      responseId: interviewId,
+      ...(share ? { shareToken: share.token } : {}),
+    })
       .then((rows) => {
         if (cancelled) return
         clearTimeout(giveUp)
@@ -211,76 +277,7 @@ export function FillPage({
       cancelled = true
       clearTimeout(giveUp)
     }
-  }, [ready, serverDraws, surveyId, interviewId, drawCards])
-
-  /**
-   * Sends one queued response and takes it out of the outbox once the server
-   * has it. Null when that response is already on its way: Convex keeps a
-   * mutation until the connection returns, so asking twice would only queue
-   * it twice.
-   */
-  const send = useCallback(
-    async (pending: PendingResponse) => {
-      if (inFlight.current.has(pending.id)) return null
-      inFlight.current.add(pending.id)
-      try {
-        const saved = await submit({
-          id: pending.id,
-          questionnaireId: pending.questionnaireId,
-          enumerator: pending.enumerator,
-          language: pending.language,
-          ...(pending.respondent ? { respondent: pending.respondent } : {}),
-          answers: encodeAnswers(pending.answers),
-          // When Submit was pressed, so an interview kept on an offline
-          // tablet is dated by the interview, not by the sync.
-          collectedAt: pending.queuedAt,
-          ...(pending.paperSerial !== undefined ? { paperSerial: pending.paperSerial } : {}),
-        })
-        removeFromOutbox(pending.id)
-        return saved
-      } catch (error) {
-        // A rejection is the server's decision, not the network's (Convex
-        // holds a request while offline rather than failing it), so sending
-        // the same copy again by itself would only be refused again. It is
-        // kept, with the reason, until someone retries or discards it.
-        const reason =
-          error instanceof ConvexError ? String(error.data) : 'The server could not store it.'
-        markRefused(pending.id, reason)
-        throw new RefusedResponseError(reason)
-      } finally {
-        inFlight.current.delete(pending.id)
-        setOutbox(readOutbox())
-      }
-    },
-    [submit],
-  )
-
-  /** Whatever an earlier visit could not deliver, from any survey on this device. */
-  const flushOutbox = useCallback(() => {
-    const pending = readOutbox()
-    setOutbox(pending)
-    for (const response of pending) {
-      if (response.refused === undefined) send(response).catch(() => undefined)
-    }
-  }, [send])
-
-  /** "Try again" on the refused responses: back in line, then sent. */
-  const retryRefused = useCallback(() => {
-    clearRefused()
-    flushOutbox()
-  }, [flushOutbox])
-
-  async function discardRefused(id: string) {
-    const sure = await confirm({
-      title: 'Discard this response for good?',
-      description: 'It is not on the server and cannot be recovered afterwards.',
-      confirmLabel: 'Discard',
-      destructive: true,
-    })
-    if (!sure) return
-    removeFromOutbox(id)
-    setOutbox(readOutbox())
-  }
+  }, [ready, serverDraws, surveyId, interviewId, drawCards, share])
 
   // Closing the tab or walking away from the page gives the cards back. That
   // release is best effort (it needs an open socket, and a discarded tab
@@ -303,22 +300,75 @@ export function FillPage({
     }
   }, [ready, serverDraws, interviewId, abandon, abandonDraw])
 
+  // ── the survey number ──────────────────────────────────────────────────
+  const assigned = drawn?.id === interviewId ? drawn : null
+  // The saved block stands in once the server is slow to answer or gone.
+  const kitStale =
+    offline.fromDevice ||
+    gaveUp ||
+    viewerOffline ||
+    (typeof navigator !== 'undefined' && navigator.onLine === false)
+  const kit = numbered
+    ? liveKit !== undefined && !viewerLoading
+      ? liveKit
+      : kitStale
+        ? offline.savedKit
+        : undefined
+    : undefined
+  // The next free number in the surveyor's block, counting the responses
+  // still waiting on this tablet as taken.
+  const claim = numbered ? offlineSerial(kit, surveyId, outbox) : null
+  const candidate = assigned?.serial ?? claim ?? undefined
   useEffect(() => {
-    if (!ready) return
-    flushOutbox()
-    window.addEventListener('online', flushOutbox)
-    return () => window.removeEventListener('online', flushOutbox)
-  }, [ready, flushOutbox])
+    if (!numbered || candidate === undefined) return
+    setFixedSerial((current) =>
+      current?.id === interviewId ? current : { id: interviewId, serial: candidate },
+    )
+  }, [numbered, candidate, interviewId])
+  const fixed = numbered
+    ? fixedSerial?.id === interviewId
+      ? fixedSerial.serial
+      : candidate
+    : assigned?.serial
+  // Paper forms keep their printed number; otherwise the fixed number, or the
+  // server's prediction for a tablet with no block. Unknown offline without one.
+  const nextSerial: number | null = paperSerial ?? share?.serial ?? fixed ?? serial ?? null
+
+  // A number from the surveyor's block that the server did not (or not yet)
+  // hand out itself: planned blocks show the row that goes with it, as the
+  // server and the paper form printed for that number would.
+  const claimDraws = useMemo<QuestionnaireCardDraws | undefined>(() => {
+    if (!questionnaire || !numbered || fixed === undefined) return undefined
+    if (assigned?.sets && assigned.serial === fixed) return undefined
+    const planned = questionnaire.questions.flatMap((question) =>
+      question.type === 'choice_experiment' && followsPlan(question) ? [question] : [],
+    )
+    if (planned.length === 0) return undefined
+    const row = planRowForSerial(planned[0], fixed)
+    const draws: QuestionnaireCardDraws = { ...(assigned?.sets ?? {}) }
+    for (const block of planned) {
+      draws[block.id] = { sets: findPlanRow(block, row)?.sets ?? [], planRow: row }
+    }
+    return draws
+  }, [questionnaire, numbered, fixed, assigned])
 
   /**
    * The response goes into the outbox first, so it survives a reload or a
-   * closed tab, and only then to the server, which assigns the real serial.
-   * With no answer in time the enumerator is told it is kept on the device
-   * and can carry on; a refusal is thrown so the form says so.
+   * closed tab, and only then to the server, which assigns the real serial
+   * (or keeps the one from the surveyor's block). With no answer in time the
+   * enumerator is told it is kept on the device and can carry on; a refusal
+   * is thrown so the form says so.
    */
   async function handleSubmit(response: SurveyResponse): Promise<SubmitOutcome> {
     submitted.current.add(response.id)
     forgetOpenInterview(response.id)
+    // Sent as the number to keep when it came from the surveyor's block.
+    const claimed = numbered && kit && fixed !== undefined ? fixed : undefined
+    const claimedNumber =
+      claimed !== undefined && questionnaire
+        ? formatSurveyNumber(questionnaire.surveyCodePrefix, claimed)
+        : undefined
+    const collector = viewer?.approved && !share ? viewer : null
     const pending: PendingResponse = {
       id: response.id,
       questionnaireId: response.questionnaireId,
@@ -328,28 +378,34 @@ export function FillPage({
       answers: response.answers,
       queuedAt: Date.now(),
       ...(paperSerial !== undefined ? { paperSerial } : {}),
+      ...(share ? { shareToken: share.token } : {}),
+      ...(claimed !== undefined ? { claimedSerial: claimed, surveyNumber: claimedNumber } : {}),
+      area,
+      ...(collector ? { surveyorId: collector.id } : {}),
     }
     if (paperSerial !== undefined) setEnteredHere(paperSerial)
-    const kept = queueResponse(pending)
+    const kept = await queueResponse(pending)
     const sending = send(pending)
     // Kept on the device, so a late refusal shows up in the notice below.
     sending.catch(() => undefined)
-    const offline = typeof navigator !== 'undefined' && navigator.onLine === false
+    const offlineNow = typeof navigator !== 'undefined' && navigator.onLine === false
 
     const timedOut = Symbol('timed out')
     const saved = await Promise.race([
       sending,
       new Promise<typeof timedOut>((resolve) =>
-        setTimeout(() => resolve(timedOut), offline ? 0 : SAVE_TIMEOUT_MS),
+        setTimeout(() => resolve(timedOut), offlineNow ? 0 : SAVE_TIMEOUT_MS),
       ),
     ])
     if (saved === timedOut || saved === null) {
-      // Counted only now, so the notice does not flash during a normal save.
-      setOutbox(readOutbox())
       // With no copy on the device (storage full or blocked) only this open
       // page holds the response; waiting here for ever, button greyed out,
       // was the alternative.
-      return { pending: true, unstored: !kept }
+      return {
+        pending: true,
+        unstored: !kept,
+        ...(claimedNumber ? { surveyNumber: claimedNumber } : {}),
+      }
     }
     return { surveyNumber: saved.surveyNumber }
   }
@@ -366,6 +422,25 @@ export function FillPage({
     return <main className="page-wrap px-4 py-12 text-muted-foreground">Loading…</main>
   }
 
+  if (questionnaire === null && offline.notOnDevice) {
+    return (
+      <main className="page-wrap px-4 py-16 text-center">
+        <CloudOff className="mx-auto size-10 text-muted-foreground" aria-hidden="true" />
+        <h1 className="mt-3 text-2xl font-bold">This survey is not saved on this tablet</h1>
+        <p className="mx-auto mt-2 max-w-md text-muted-foreground">
+          There is no connection, and this survey was never opened here with internet. Open it once
+          while online (or press “Make available offline” on My surveys), then it works without a
+          connection.
+        </p>
+        <p lang="bn" className="mx-auto mt-2 max-w-md text-muted-foreground">
+          ইন্টারনেট সংযোগ নেই, আর এই জরিপটি এই ট্যাবলেটে আগে কখনো ইন্টারনেট থাকা অবস্থায় খোলা হয়নি।
+          একবার ইন্টারনেটসহ খুলুন, তারপর সংযোগ ছাড়াই কাজ করবে।
+        </p>
+        <UnsentPanel className="mt-8" />
+      </main>
+    )
+  }
+
   if (questionnaire === null) {
     return (
       <main className="page-wrap px-4 py-16 text-center">
@@ -377,14 +452,18 @@ export function FillPage({
     )
   }
 
+  // Unknown only with no connection and no block of numbers: the server
+  // numbers the response when it arrives.
+  const shownSerial = nextSerial ?? 0
+  const shownNumber =
+    nextSerial === null
+      ? 'given when sent'
+      : formatSurveyNumber(questionnaire.surveyCodePrefix, nextSerial)
   // These blocks wait for the server's answer. The counts are only what a
   // block falls back on once the server has answered without cards for it or
   // has not answered in time; cards and plan rows other tablets hold right now
-  // count too.
-  const assigned = drawn?.id === interviewId ? drawn : null
-  // The number the server held along with the cards is the one this interview
-  // is recorded under; without one, the prediction.
-  const nextSerial = paperSerial ?? assigned?.serial ?? serial ?? 1
+  // count too. Offline, the counts last saved on this tablet stand in.
+  const counts = exposure ?? fetchedExposure ?? offline.savedExposure
   const paperOwner = paperCheck?.owner ?? null
   // Refused before typing starts: a number already recorded, or not the
   // surveyor's own. After a submit here the check turns to "already
@@ -397,14 +476,14 @@ export function FillPage({
   let planExposure: QuestionnairePlanExposure | undefined
   if (!serverDraws || assigned) {
     cardExposure = {}
-    for (const { questionId, set, count, reserved } of exposure?.cards ?? []) {
+    for (const { questionId, set, count, reserved } of counts?.cards ?? []) {
       cardExposure[questionId] = {
         ...(cardExposure[questionId] ?? {}),
         [set]: count + reserved,
       }
     }
     planExposure = {}
-    for (const { questionId, row, count, reserved } of exposure?.planRows ?? []) {
+    for (const { questionId, row, count, reserved } of counts?.planRows ?? []) {
       planExposure[questionId] = {
         ...(planExposure[questionId] ?? {}),
         [row]: count + reserved,
@@ -414,8 +493,10 @@ export function FillPage({
 
   // A signed-in, approved account collects under its own name; the server
   // stamps the account onto the response as well.
-  const account = viewer?.approved ? viewer : null
-  const stepped = isSurveyor || steps === true
+  // Whoever opens a share link is a respondent, even a team member trying it.
+  const account = viewer?.approved && !share ? viewer : null
+  const team = !share && (canBuild || isSurveyor)
+  const stepped = (isSurveyor && !share) || steps === true
   const lockedName = account
     ? account.code
       ? `${account.displayName} (${account.code})`
@@ -426,7 +507,7 @@ export function FillPage({
     <main className="page-wrap px-4 py-8 sm:py-12">
       {/* Opening the form for respondents used to be a one-way door: the only
           way back was a small link far below the last question. */}
-      {(canBuild || isSurveyor) && (
+      {team && (
         <div className="mx-auto mb-5 flex w-full max-w-3xl flex-wrap items-center justify-between gap-3">
           {canBuild ? (
             <Button
@@ -457,7 +538,7 @@ export function FillPage({
         </div>
       )}
 
-      {(canBuild || isSurveyor) && (
+      {team && (
         <PaperEntryBar
           current={paperSerial}
           prefix={questionnaire.surveyCodePrefix}
@@ -488,31 +569,39 @@ export function FillPage({
         <QuestionnaireRenderer
           questionnaire={questionnaire}
           meta={
-            paperSerial !== undefined && (paperOwner || account)
+            share
               ? {
-                  serial: nextSerial,
-                  surveyNumber: formatSurveyNumber(questionnaire.surveyCodePrefix, nextSerial),
+                  serial: shownSerial,
+                  surveyNumber: shownNumber,
+                  enumerator: share.sharedBy,
+                  locked: true,
+                  hideEnumerator: true,
+                }
+              : paperSerial !== undefined && (paperOwner || account)
+              ? {
+                  serial: shownSerial,
+                  surveyNumber: shownNumber,
                   // The interviewer is whoever the number was handed to.
                   enumerator: paperOwner?.name ?? account!.displayName,
                   locked: true,
                 }
               : account
               ? {
-                  serial: nextSerial,
-                  surveyNumber: formatSurveyNumber(questionnaire.surveyCodePrefix, nextSerial),
+                  serial: shownSerial,
+                  surveyNumber: shownNumber,
                   enumerator: account.displayName,
                   locked: true,
                 }
               : {
-                  serial: nextSerial,
-                  surveyNumber: formatSurveyNumber(questionnaire.surveyCodePrefix, nextSerial),
+                  serial: shownSerial,
+                  surveyNumber: shownNumber,
                   enumerator,
                   onEnumeratorChange: changeEnumerator,
                 }
           }
           cardExposure={cardExposure}
           planExposure={planExposure}
-          cardDraws={paperDraws ?? assigned?.sets ?? undefined}
+          cardDraws={paperDraws ?? claimDraws ?? assigned?.sets ?? undefined}
           responseId={interviewId}
           onRestart={() => {
             // Typing in paper forms: straight on to the next number.
@@ -523,59 +612,13 @@ export function FillPage({
             abandon(interviewId)
             setInterviewId(uid())
           }}
+          singleResponse={typeof share?.serial === 'number'}
           onDirtyChange={setDirty}
           onSubmit={handleSubmit}
           mode={stepped && paperSerial === undefined ? 'steps' : 'page'}
         />
       )}
-      {waiting > 0 && (
-        <div
-          role="status"
-          className="mx-auto mt-6 flex w-full max-w-3xl flex-wrap items-center justify-center gap-x-4 gap-y-2 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-center text-sm text-amber-700 dark:text-amber-300"
-        >
-          <p>
-            {waiting === 1
-              ? '1 response is kept on this device and is not on the server yet.'
-              : `${waiting} responses are kept on this device and are not on the server yet.`}{' '}
-            They are sent when the internet is back.
-            <span lang="bn" className="block">
-              {waiting} টি উত্তর এই ডিভাইসে রাখা আছে, এখনও সার্ভারে পৌঁছায়নি। ইন্টারনেট ফিরে এলে নিজে থেকেই পাঠানো হবে।
-            </span>
-          </p>
-          <Button type="button" variant="outline" size="sm" onClick={flushOutbox}>
-            Send now
-          </Button>
-        </div>
-      )}
-      {refused.length > 0 && (
-        <div
-          role="alert"
-          className="mx-auto mt-4 w-full max-w-3xl rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"
-        >
-          <p className="font-medium">
-            {refused.length === 1
-              ? 'The server did not accept 1 response kept on this device.'
-              : `The server did not accept ${refused.length} responses kept on this device.`}{' '}
-            They stay here until you try again or discard them.
-          </p>
-          <ul className="mt-2 space-y-1.5">
-            {refused.map((response) => (
-              <li key={response.id} className="flex flex-wrap items-center justify-between gap-2">
-                <span>
-                  {new Date(response.queuedAt).toLocaleString()} · {response.enumerator || '(no name)'}
-                  : {response.refused}
-                </span>
-                <Button type="button" variant="outline" size="sm" onClick={() => discardRefused(response.id)}>
-                  Discard
-                </Button>
-              </li>
-            ))}
-          </ul>
-          <Button type="button" variant="outline" size="sm" className="mt-2" onClick={retryRefused}>
-            Try again
-          </Button>
-        </div>
-      )}
+      <UnsentPanel className="mt-6" />
       <p className="mt-8 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-center text-xs text-muted-foreground">
         {lockedName && <span>Collecting as {lockedName}</span>}
         {account && (
@@ -583,9 +626,43 @@ export function FillPage({
             Team chat
           </Link>
         )}
-
+        {!share && <OfflineCopyNote fromDevice={offline.fromDevice} saved={offline.saved} />}
       </p>
     </main>
+  )
+}
+
+/**
+ * Whether this survey is saved on the tablet for use with no connection, and
+ * whether the form on screen is that saved copy.
+ */
+function OfflineCopyNote({
+  fromDevice,
+  saved,
+}: {
+  fromDevice: boolean
+  saved: { savedAt: number; missingPictures?: number } | null
+}) {
+  if (!saved) return null
+  const when = new Date(saved.savedAt).toLocaleString([], {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      {fromDevice ? (
+        <CloudOff className="size-3.5" aria-hidden="true" />
+      ) : (
+        <HardDriveDownload className="size-3.5" aria-hidden="true" />
+      )}
+      {fromDevice
+        ? `No connection: this is the copy saved on this tablet (${when})`
+        : `Saved on this tablet for offline use · ${when}`}
+      {(saved.missingPictures ?? 0) > 0 &&
+        ` · ${saved.missingPictures} picture${saved.missingPictures === 1 ? '' : 's'} could not be saved`}
+    </span>
   )
 }
 

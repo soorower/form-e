@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { pickSerial, planRowForSerial, rangeProblem, rangesOverlap } from '../../../convex/serials'
+import { pickSerial, planRowForSerial, rangeProblem, rangesOverlap, lowestFreeInRange } from '../../../convex/serials'
 import { fitScale, paperScenarios, paperSerials } from './paper'
 import { planRowForSerial as clientPlanRow } from './scenario-plan'
 
@@ -19,6 +19,17 @@ describe('pickSerial', () => {
   it('gives a surveyor the lowest free number in their own range', () => {
     expect(pickSerial(new Set(), team, team[1])).toBe(101)
     expect(pickSerial(new Set([101, 102, 104, 1, 2]), team, team[1])).toBe(103)
+  })
+
+  it('skips numbers set aside for a survey link without counting on from them', () => {
+    const taken = new Set([1, 2, 3, 4])
+    expect(pickSerial(taken, [], undefined, new Set([6]))).toBe(5)
+    // Once 6 is answered too, the next interview still fills 5 first.
+    expect(pickSerial(new Set([...taken, 6]), [], undefined, new Set([6]))).toBe(5)
+    expect(pickSerial(new Set([...taken, 5, 6]), [], undefined, new Set([6]))).toBe(7)
+    // Inside a surveyor's own block too.
+    const own = { start: 101, end: 200 }
+    expect(pickSerial(new Set([101, 102, 103, 104]), [own], own, new Set([105]))).toBe(106)
   })
 
   it('treats numbers held by interviews going on as taken', () => {
@@ -131,5 +142,13 @@ describe('fitScale', () => {
   it('shrinks a longer copy just enough, keeping room for page breaks', () => {
     expect(fitScale(3600, 1000)).toBe(0.55)
     expect(fitScale(2400, 1000)).toBe(0.75)
+  })
+})
+
+describe('lowestFreeInRange', () => {
+  it('gives the lowest number of the block nobody has taken, or null once it is full', () => {
+    expect(lowestFreeInRange([101, 102, 104], { start: 101, end: 200 })).toBe(103)
+    expect(lowestFreeInRange([], { start: 101, end: 200 })).toBe(101)
+    expect(lowestFreeInRange([1, 2, 3], { start: 1, end: 3 })).toBeNull()
   })
 })

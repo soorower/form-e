@@ -42,6 +42,11 @@ export interface ResponseMeta {
    * the name need not be one of the questionnaire's team names.
    */
   locked?: boolean
+  /**
+   * The respondent is answering on their own through a share link: the
+   * survey number is shown, but not "Enumerator", which means nothing to them.
+   */
+  hideEnumerator?: boolean
 }
 
 /** Per choice-experiment question id: how often each card set has been shown. */
@@ -59,11 +64,15 @@ export type QuestionnaireCardDraws = Record<string, { sets: number[]; planRow?: 
 
 /** What became of a submitted response. */
 export interface SubmitOutcome {
-  /** The number the server assigned, once it has the response. */
+  /**
+   * The number the server assigned, once it has the response. With `pending`,
+   * the number the interview was done under from the surveyor's own block,
+   * which the response keeps when it reaches the server.
+   */
   surveyNumber?: string
   /**
    * The response is kept on this device and will be sent when the connection
-   * returns; the confirmation screen says so instead of showing a number.
+   * returns; the confirmation screen says so (with its number when it has one).
    */
   pending?: boolean
   /**
@@ -98,6 +107,11 @@ interface QuestionnaireRendererProps {
   /** "Start a new response" was pressed: time for a new `responseId`. */
   onRestart?: () => void
   /**
+   * The page takes one response (a share link for one survey number), so the
+   * confirmation offers no "Start a new response".
+   */
+  singleResponse?: boolean
+  /**
    * Whether the respondent has entered anything not yet submitted, so the
    * page can hold back navigation that would lose it.
    */
@@ -129,6 +143,7 @@ export function QuestionnaireRenderer({
   cardDraws,
   responseId: givenResponseId,
   onRestart,
+  singleResponse = false,
   onDirtyChange,
   onSubmit,
   mode = 'page',
@@ -243,7 +258,11 @@ export function QuestionnaireRenderer({
         typeof result === 'string' ? { surveyNumber: result } : (result ?? {})
       setPendingUpload(outcome.pending === true)
       setUnstored(outcome.unstored === true)
-      setSubmitted(outcome.pending ? '' : (outcome.surveyNumber ?? meta?.surveyNumber ?? ''))
+      setSubmitted(
+        outcome.pending
+          ? (outcome.surveyNumber ?? '')
+          : (outcome.surveyNumber ?? meta?.surveyNumber ?? ''),
+      )
     } catch (error) {
       // Without this the button simply went back to "Submit" and the
       // interview looked saved. The answers stay on screen for another try;
@@ -368,10 +387,15 @@ export function QuestionnaireRenderer({
         ) : (
           pendingUpload && (
             <p className="max-w-md text-muted-foreground">
-              {t(
-                'There is no connection right now. The response is kept on this device and is sent by itself when the internet is back; it gets its survey number then.',
-                'এই মুহূর্তে ইন্টারনেট সংযোগ নেই। উত্তরটি এই ডিভাইসে রাখা আছে, সংযোগ ফিরে এলে নিজে থেকেই পাঠানো হবে এবং তখনই জরিপ নম্বর পাবে।',
-              )}
+              {submitted
+                ? t(
+                    'There is no connection right now. The response is kept on this device under the survey number below, and is sent by itself when the internet is back.',
+                    'এই মুহূর্তে ইন্টারনেট সংযোগ নেই। উত্তরটি নিচের জরিপ নম্বরে এই ডিভাইসে রাখা আছে, সংযোগ ফিরে এলে নিজে থেকেই পাঠানো হবে।',
+                  )
+                : t(
+                    'There is no connection right now. The response is kept on this device and is sent by itself when the internet is back; it gets its survey number then.',
+                    'এই মুহূর্তে ইন্টারনেট সংযোগ নেই। উত্তরটি এই ডিভাইসে রাখা আছে, সংযোগ ফিরে এলে নিজে থেকেই পাঠানো হবে এবং তখনই জরিপ নম্বর পাবে।',
+                  )}
             </p>
           )
         )}
@@ -383,9 +407,11 @@ export function QuestionnaireRenderer({
         <p className="text-muted-foreground">
           {t('Thank you for taking part.', 'অংশগ্রহণের জন্য ধন্যবাদ।')}
         </p>
-        <Button type="button" size="lg" className="h-12 px-8 text-base" onClick={reset}>
-          {t('Start a new response', 'নতুন উত্তর শুরু করুন')}
-        </Button>
+        {!singleResponse && (
+          <Button type="button" size="lg" className="h-12 px-8 text-base" onClick={reset}>
+            {t('Start a new response', 'নতুন উত্তর শুরু করুন')}
+          </Button>
+        )}
       </div>
     )
   }
@@ -475,43 +501,45 @@ export function QuestionnaireRenderer({
               <span className="text-muted-foreground">{t('Survey no.', 'জরিপ নং')}</span>{' '}
               <span className="font-mono text-base font-semibold">{meta.surveyNumber}</span>
             </p>
-            <div className="flex flex-wrap items-center gap-2">
-              <label htmlFor="enumerator" className="text-muted-foreground">
-                {t('Enumerator', 'জরিপকারী')}
-              </label>
-              {!meta.onEnumeratorChange ? (
-                <span className="font-medium">{enumerator || '—'}</span>
-              ) : team.length > 0 ? (
-                <Select
-                  value={team.includes(enumerator) ? enumerator : null}
-                  onValueChange={(name) => meta.onEnumeratorChange?.(name ?? '')}
-                  items={Object.fromEntries(team.map((name) => [name, name]))}
-                >
-                  <SelectTrigger
-                    id="enumerator"
-                    aria-invalid={attempted && enumeratorMissing}
-                    className="w-56 text-base data-[size=default]:h-11"
+            {!meta.hideEnumerator && (
+              <div className="flex flex-wrap items-center gap-2">
+                <label htmlFor="enumerator" className="text-muted-foreground">
+                  {t('Enumerator', 'জরিপকারী')}
+                </label>
+                {!meta.onEnumeratorChange ? (
+                  <span className="font-medium">{enumerator || '—'}</span>
+                ) : team.length > 0 ? (
+                  <Select
+                    value={team.includes(enumerator) ? enumerator : null}
+                    onValueChange={(name) => meta.onEnumeratorChange?.(name ?? '')}
+                    items={Object.fromEntries(team.map((name) => [name, name]))}
                   >
-                    <SelectValue placeholder={t('Choose your name', 'আপনার নাম বেছে নিন')} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {team.map((name) => (
-                      <SelectItem key={name} value={name} className="py-2.5 text-base">
-                        {name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              ) : (
-                <Input
-                  id="enumerator"
-                  value={meta.enumerator}
-                  placeholder={t('Your name', 'আপনার নাম')}
-                  className="h-11 w-56 text-base md:text-base"
-                  onChange={(event) => meta.onEnumeratorChange?.(event.target.value)}
-                />
-              )}
-            </div>
+                    <SelectTrigger
+                      id="enumerator"
+                      aria-invalid={attempted && enumeratorMissing}
+                      className="w-56 text-base data-[size=default]:h-11"
+                    >
+                      <SelectValue placeholder={t('Choose your name', 'আপনার নাম বেছে নিন')} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {team.map((name) => (
+                        <SelectItem key={name} value={name} className="py-2.5 text-base">
+                          {name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Input
+                    id="enumerator"
+                    value={meta.enumerator}
+                    placeholder={t('Your name', 'আপনার নাম')}
+                    className="h-11 w-56 text-base md:text-base"
+                    onChange={(event) => meta.onEnumeratorChange?.(event.target.value)}
+                  />
+                )}
+              </div>
+            )}
             {attempted && enumeratorMissing && (
               <p className="w-full text-sm font-medium text-destructive">
                 {t(

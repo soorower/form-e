@@ -5,6 +5,7 @@ import { ShieldCheck } from 'lucide-react'
 import ThemeToggle from '#/components/ThemeToggle'
 import { AuthNav } from '#/components/auth/AuthNav'
 import { AreaProvider } from '#/components/auth/area'
+import { OutboxProvider } from '#/components/offline/OutboxProvider'
 import { useViewer } from '#/hooks/useViewer'
 import { ADMIN_AUTH_NAMESPACE, isAdminPath } from '#/lib/auth/areas'
 import { adminConvex } from '#/lib/convex/admin-client'
@@ -36,8 +37,11 @@ function AdminLayout() {
       }
     >
       <AreaProvider area="admin">
-        <AdminHeader />
-        <Outlet />
+        {/* The admin session sends what was collected under it. */}
+        <OutboxProvider area="admin">
+          <AdminHeader />
+          <Outlet />
+        </OutboxProvider>
       </AreaProvider>
     </ConvexAuthProvider>
   )

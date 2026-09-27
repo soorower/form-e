@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Form-E · offline</title>
+    <link rel="icon" href="/favicon.ico" />
+    <!--
+      Shown by the service worker (sw/sw.js) when there is no connection and
+      the page asked for was never saved on this device. It stands alone:
+      the app's stylesheet has a build-specific name, so the few styles it
+      needs are inline, and it lists the pages that are saved.
+    -->
+    <style>
+      :root { color-scheme: light dark; --bg: #fff; --fg: #111827; --muted: #6b7280; --card: #f9fafb; --line: #e5e7eb; --accent: #1877f2; }
+      @media (prefers-color-scheme: dark) { :root { --bg: #0b0f17; --fg: #f3f4f6; --muted: #9ca3af; --card: #111827; --line: #1f2937; --accent: #60a5fa; } }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.5 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
+      main { max-width: 36rem; margin: 0 auto; padding: 3rem 1rem; text-align: center; }
+      h1 { font-size: 1.5rem; margin: 0.75rem 0 0.5rem; }
+      p { color: var(--muted); margin: 0.5rem 0; }
+      ul { list-style: none; padding: 0; margin: 1.5rem 0 0; text-align: left; }
+      li a { display: block; padding: 0.75rem 1rem; margin-bottom: 0.5rem; border: 1px solid var(--line); border-radius: 0.75rem; background: var(--card); color: var(--fg); text-decoration: none; font-weight: 600; }
+      li a small { display: block; color: var(--muted); font-weight: 400; }
+      button { margin-top: 1.25rem; padding: 0.6rem 1.25rem; border-radius: 0.6rem; border: 0; background: var(--accent); color: #fff; font: inherit; font-weight: 600; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m2 2 20 20"/><path d="M5.782 5.782A7 7 0 0 0 9 19h8.5a4.5 4.5 0 0 0 1.307-.193"/><path d="M21.532 16.5A4.5 4.5 0 0 0 17.5 10h-1.79A7.008 7.008 0 0 0 10 5.07"/></svg>
+      <h1>No internet connection</h1>
+      <p>This page is not saved on this device. These pages are, and open without a connection:</p>
+      <p lang="bn">ইন্টারনেট সংযোগ নেই। এই পাতাটি এই ডিভাইসে সংরক্ষিত নেই। নিচের পাতাগুলো সংযোগ ছাড়াই খোলে:</p>
+      <ul id="saved"></ul>
+      <button type="button" onclick="location.reload()">Try again</button>
+    </main>
+    <script>
+      ;(async function () {
+        var list = document.getElementById('saved')
+        try {
+          var cache = await caches.open('forme-pages')
+          var keys = await cache.keys()
+          var seen = {}
+          keys.forEach(function (request) {
+            var url = new URL(request.url)
+            var path = url.pathname
+            if (seen[path]) return
+            seen[path] = true
+            var label =
+              path === '/' ? 'Home' :
+              path === '/surveys' ? 'My surveys' :
+              /\/fill$/.test(path) ? 'Survey form' : null
+            if (!label) return
+            var item = document.createElement('li')
+            var link = document.createElement('a')
+            link.href = path
+            link.textContent = label
+            if (/\/fill$/.test(path)) {
+              var detail = document.createElement('small')
+              detail.textContent = path
+              link.appendChild(detail)
+            }
+            item.appendChild(link)
+            list.appendChild(item)
+          })
+        } catch (error) {}
+        if (!list.children.length) {
+          var none = document.createElement('li')
+          none.innerHTML = '<p>No pages are saved yet. Open Form-E once with internet.</p>'
+          list.appendChild(none)
+        }
+      })()
+    </script>
+  </body>
+</html>

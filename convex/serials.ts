@@ -15,6 +15,11 @@ export interface SerialRange {
 /** Survey numbers are whole and start at 1; a range may span at most this many. */
 export const MAX_RANGE_SIZE = 100_000
 
+/** "ACBUS-" + 7 -> "ACBUS-007". Mirrors formatSurveyNumber in the client. */
+export function formatSurveyNumber(prefix: string, serial: number): string {
+  return `${prefix}${String(Math.max(0, serial)).padStart(3, '0')}`
+}
+
 export function inRange(serial: number, range: SerialRange): boolean {
   return serial >= range.start && serial <= range.end
 }
@@ -47,24 +52,48 @@ export function rangeProblem(range: SerialRange): string | null {
  *   highest number outside them, skipping any range in the way, so nobody
  *   takes a number printed on someone else's paper forms. With no ranges this
  *   is simply "one more than the highest", as it always was.
+ * - `pinned`: numbers set aside for one survey link each (106 sent to
+ *   someone). They are skipped, answered or not, but never count as the
+ *   highest: after 104, with 106 pinned, the next interview is 105, then 107.
  */
-export function pickSerial(taken: Set<number>, ranges: SerialRange[], own?: SerialRange): number {
+export function pickSerial(
+  taken: Set<number>,
+  ranges: SerialRange[],
+  own?: SerialRange,
+  pinned: Set<number> = new Set(),
+): number {
+  const used = (serial: number) => taken.has(serial) || pinned.has(serial)
   if (own) {
     for (let serial = own.start; serial <= own.end; serial += 1) {
-      if (!taken.has(serial)) return serial
+      if (!used(serial)) return serial
     }
   }
   let highest = 0
   for (const serial of taken) {
+    if (pinned.has(serial)) continue
     if (serial > highest && !ranges.some((range) => inRange(serial, range))) highest = serial
   }
   let serial = highest + 1
   for (;;) {
     const blocking = ranges.find((range) => inRange(serial, range))
     if (blocking) serial = blocking.end + 1
-    else if (taken.has(serial)) serial += 1
+    else if (used(serial)) serial += 1
     else return serial
   }
+}
+
+/**
+ * The lowest number in `range` nobody has taken, or null once it is full.
+ * A tablet with no connection numbers its interviews this way from the last
+ * list of taken numbers it saw, so the number on screen is the one the
+ * response keeps (see `offlineKit` and `claimedSerial` in convex/responses.ts).
+ */
+export function lowestFreeInRange(taken: Iterable<number>, range: SerialRange): number | null {
+  const used = new Set(taken)
+  for (let serial = range.start; serial <= range.end; serial += 1) {
+    if (!used.has(serial)) return serial
+  }
+  return null
 }
 
 /**

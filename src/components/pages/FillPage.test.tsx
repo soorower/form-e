@@ -6,6 +6,8 @@ import type { ReactNode } from 'react'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { encodeQuestionnaire } from '#/lib/convex/questionnaire-codec'
 import { createQuestion, createQuestionnaire, text } from '#/lib/questionnaire/factory'
+import { OutboxProvider } from '#/components/offline/OutboxProvider'
+import { freshOfflineDb } from '#/lib/offline/testing'
 import { readOutbox } from '#/lib/questionnaire/outbox'
 import type { TextQuestion } from '#/lib/questionnaire/types'
 import { FillPage } from './FillPage'
@@ -17,6 +19,10 @@ const mocks = vi.hoisted(() => ({
   drawCards: vi.fn(),
   abandon: vi.fn(),
   stored: null as unknown,
+  // responses:offlineKit — the signed-in surveyor's block of numbers.
+  kit: null as unknown,
+  // responses:nextSerial — undefined while there is no connection.
+  nextSerial: 5 as number | undefined,
   exposure: { cards: [] as unknown[], planRows: [] as unknown[] },
   // Every args value the page subscribed to cardExposure with ('skip' included).
   exposureArgs: [] as unknown[],
@@ -28,6 +34,8 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('convex/react', () => ({
+  // No client to read card counts with once, or to watch the connection on.
+  useConvex: () => null,
   useMutation: (reference: FunctionReference<'mutation'>) => {
     const name = getFunctionName(reference)
     if (name === 'responses:drawCards') return mocks.drawCards
@@ -38,8 +46,9 @@ vi.mock('convex/react', () => ({
     if (args === 'skip') return undefined
     const name = getFunctionName(reference)
     if (name === 'questionnaires:get') return mocks.stored
-    if (name === 'responses:nextSerial') return 5
+    if (name === 'responses:nextSerial') return mocks.nextSerial
     if (name === 'responses:paperCheck') return mocks.paperCheck
+    if (name === 'responses:offlineKit') return mocks.kit
     if (name === 'responses:cardExposure') {
       mocks.exposureArgs.push(args)
       return mocks.exposure
@@ -52,6 +61,7 @@ vi.mock('#/hooks/useViewer', () => ({
 }))
 vi.mock('#/components/auth/area', () => ({
   useSurveyPaths: () => ({ chat: '/chat', list: '/surveys', editor: '/editor', fill: '/fill' }),
+  useArea: () => 'app',
 }))
 vi.mock('@tanstack/react-router', () => ({
   // Keeps `to` as the href so tests can assert where a link goes; `params`
@@ -63,6 +73,11 @@ vi.mock('@tanstack/react-router', () => ({
   useBlocker: () => undefined,
   useNavigate: () => mocks.navigate,
 }))
+
+/** The page as the app mounts it: under the provider that sends what is kept on the device. */
+function renderFill(ui: ReactNode) {
+  return render(<OutboxProvider area="app">{ui}</OutboxProvider>)
+}
 
 function setOnline(online: boolean) {
   Object.defineProperty(window.navigator, 'onLine', { value: online, configurable: true })
@@ -91,9 +106,11 @@ describe('FillPage saving', () => {
     })
   })
 
-  beforeEach(() => {
+  beforeEach(async () => {
     window.localStorage.clear()
+    await freshOfflineDb()
     mocks.submit.mockReset()
+    mocks.kit = null
     setOnline(true)
   })
 
@@ -101,12 +118,12 @@ describe('FillPage saving', () => {
 
   it('shows the number the server assigned and leaves nothing behind on the device', async () => {
     mocks.submit.mockResolvedValue({ serial: 7, surveyNumber: 'T-007' })
-    render(<FillPage surveyId="survey-1" />)
+    renderFill(<FillPage surveyId="survey-1" />)
 
     await fillAndSubmit()
     await screen.findByText('Response recorded')
     expect(screen.getByText('T-007')).toBeTruthy()
-    expect(readOutbox()).toEqual([])
+    expect(await readOutbox()).toEqual([])
     expect(screen.queryByRole('status')).toBeNull()
 
     const [sent] = mocks.submit.mock.calls[0]
@@ -117,34 +134,74 @@ describe('FillPage saving', () => {
     expect(sent.collectedAt).toBeLessThanOrEqual(Date.now())
   })
 
+  it('answers a share link as a respondent: no team tools, credited to whoever shared it', async () => {
+    mocks.submit.mockResolvedValue({ serial: 9, surveyNumber: 'T-009' })
+    // Even a builder opening their own link sees what the respondent sees.
+    mocks.viewer = { viewer: null, isSurveyor: false, canBuild: true }
+    try {
+      renderFill(<FillPage surveyId="survey-1" share={{ token: 'tok123', sharedBy: 'Ikra' }} />)
+      await screen.findByPlaceholderText('Type here')
+      expect(screen.queryByText('Back to the editor')).toBeNull()
+      expect(screen.queryByText(/Type in a paper form/)).toBeNull()
+      expect(screen.queryByText('Enumerator')).toBeNull()
+      // The survey number is shown: the sharer's next one, from the server.
+      expect(screen.getByText('T-005')).toBeTruthy()
+
+      await fillAndSubmit()
+      await screen.findByText('Response recorded')
+      expect(mocks.submit.mock.calls[0][0]).toMatchObject({
+        questionnaireId: 'survey-1',
+        enumerator: 'Ikra',
+        shareToken: 'tok123',
+      })
+      expect(screen.getByText('Start a new response')).toBeTruthy()
+    } finally {
+      mocks.viewer = { viewer: null, isSurveyor: false, canBuild: false }
+    }
+  })
+
+  it('shows a numbered link its own survey number and takes one answer', async () => {
+    mocks.submit.mockResolvedValue({ serial: 106, surveyNumber: 'T-106' })
+    renderFill(
+      <FillPage surveyId="survey-1" share={{ token: 'tok106', sharedBy: 'Ikra', serial: 106 }} />,
+    )
+    await screen.findByPlaceholderText('Type here')
+    expect(screen.getByText('T-106')).toBeTruthy()
+
+    await fillAndSubmit()
+    await screen.findByText('Response recorded')
+    expect(mocks.submit.mock.calls[0][0]).toMatchObject({ shareToken: 'tok106' })
+    expect(screen.queryByText('Start a new response')).toBeNull()
+  })
+
   it('keeps the interview on the device with no connection, and delivers it later', async () => {
     let deliver: (saved: { serial: number; surveyNumber: string }) => void = () => undefined
     // Convex holds a mutation until the connection is back: it neither fails nor resolves.
     mocks.submit.mockReturnValue(new Promise((resolve) => (deliver = resolve)))
     setOnline(false)
-    render(<FillPage surveyId="survey-1" />)
+    renderFill(<FillPage surveyId="survey-1" />)
 
     await fillAndSubmit()
     await screen.findByText('Saved on this device')
-    expect(readOutbox()).toHaveLength(1)
+    expect(await readOutbox()).toHaveLength(1)
     expect(screen.getByRole('status').textContent).toMatch(/1 response is kept on this device/)
 
     deliver({ serial: 8, surveyNumber: 'T-008' })
-    await waitFor(() => expect(readOutbox()).toEqual([]))
+    await waitFor(async () => expect(await readOutbox()).toEqual([]))
     await waitFor(() => expect(screen.queryByRole('status')).toBeNull())
     expect(mocks.submit).toHaveBeenCalledTimes(1)
   })
 
   it('keeps a refused response with the reason, out of the automatic retries, until "Try again"', async () => {
     mocks.submit.mockRejectedValue(new ConvexError('This survey no longer exists.'))
-    const first = render(<FillPage surveyId="survey-1" />)
+    const first = renderFill(<FillPage surveyId="survey-1" />)
 
     await fillAndSubmit()
     const alerts = await screen.findAllByRole('alert')
     const said = alerts.map((alert) => alert.textContent).join(' ')
     // The reason, not "check the connection": the server turned it down.
     expect(said).toMatch(/did not accept this response: This survey no longer exists/)
-    const [kept] = readOutbox()
+    const [kept] = await readOutbox()
     expect(kept.refused).toBe('This survey no longer exists.')
     expect(kept.answers).toEqual(mocks.submit.mock.calls[0][0].answers)
     first.unmount()
@@ -152,13 +209,13 @@ describe('FillPage saving', () => {
     // The next visit leaves it alone: the same copy would only be refused again.
     mocks.submit.mockReset()
     mocks.submit.mockResolvedValue({ serial: 9, surveyNumber: 'T-009' })
-    render(<FillPage surveyId="survey-1" />)
+    renderFill(<FillPage surveyId="survey-1" />)
     await screen.findByText(/did not accept 1 response kept on this device/)
     expect(mocks.submit).not.toHaveBeenCalled()
     expect(screen.queryByText(/kept on this device and is not on the server yet/)).toBeNull()
 
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
-    await waitFor(() => expect(readOutbox()).toEqual([]))
+    await waitFor(async () => expect(await readOutbox()).toEqual([]))
     expect(mocks.submit).toHaveBeenCalledTimes(1)
     expect(mocks.submit.mock.calls[0][0].id).toBe(kept.id)
   })
@@ -172,9 +229,10 @@ describe('FillPage balanced cards', () => {
   })
 
   let before: unknown
-  beforeEach(() => {
+  beforeEach(async () => {
     before = plain()
     window.localStorage.clear()
+    await freshOfflineDb()
     mocks.submit.mockReset()
     mocks.drawCards.mockReset()
     mocks.abandon.mockReset()
@@ -207,7 +265,7 @@ describe('FillPage balanced cards', () => {
   it('shows the cards the server reserved, and saves the interview under the id they were reserved for', async () => {
     mocks.drawCards.mockResolvedValue([{ questionId: 'block', sets: [4, 2] }])
     mocks.submit.mockResolvedValue({ serial: 1, surveyNumber: 'T-001' })
-    render(<FillPage surveyId="survey-2" />)
+    renderFill(<FillPage surveyId="survey-2" />)
 
     await screen.findByText('4 Hours')
     expect(screen.getByText('2 Hours')).toBeTruthy()
@@ -236,7 +294,7 @@ describe('FillPage balanced cards', () => {
   it('gives the cards back when an interview is abandoned, but not when it was submitted', async () => {
     mocks.drawCards.mockResolvedValue([{ questionId: 'block', sets: [4, 2] }])
     mocks.submit.mockResolvedValue({ serial: 1, surveyNumber: 'T-001' })
-    const view = render(<FillPage surveyId="survey-2" />)
+    const view = renderFill(<FillPage surveyId="survey-2" />)
 
     await screen.findByText('4 Hours')
     const abandoned = mocks.drawCards.mock.calls[0][0].responseId
@@ -246,7 +304,7 @@ describe('FillPage balanced cards', () => {
 
     mocks.abandon.mockClear()
     mocks.drawCards.mockResolvedValue([{ questionId: 'block', sets: [1, 3] }])
-    const second = render(<FillPage surveyId="survey-2" />)
+    const second = renderFill(<FillPage surveyId="survey-2" />)
     await screen.findByText('1 Hours')
     for (const option of screen.getAllByRole('radio')) fireEvent.click(option)
     fireEvent.click(screen.getByRole('button', { name: 'Submit' }))
@@ -271,7 +329,7 @@ describe('FillPage balanced cards', () => {
       planRows: [],
     }
     setOnline(false)
-    render(<FillPage surveyId="survey-2" />)
+    renderFill(<FillPage surveyId="survey-2" />)
 
     await screen.findByText('3 Hours')
     expect(screen.getByText('4 Hours')).toBeTruthy()
@@ -305,7 +363,7 @@ describe('FillPage getting back', () => {
   afterEach(cleanup)
 
   it('offers no way out to a respondent on a shared tablet', async () => {
-    render(<FillPage surveyId="survey-1" />)
+    renderFill(<FillPage surveyId="survey-1" />)
     await screen.findByPlaceholderText('Type here')
     expect(screen.queryByText('Back to the editor')).toBeNull()
     expect(screen.queryByText('My surveys')).toBeNull()
@@ -313,7 +371,7 @@ describe('FillPage getting back', () => {
 
   it('puts a way back to the editor at the top for whoever can edit it', async () => {
     mocks.viewer = { viewer: null, isSurveyor: false, canBuild: true }
-    render(<FillPage surveyId="survey-1" />)
+    renderFill(<FillPage surveyId="survey-1" />)
     // Above the form, not a small link below the last question: opening the
     // survey for respondents used to be a one-way door.
     // An anchor carrying base-ui's role="button", as the editor's own
@@ -327,7 +385,7 @@ describe('FillPage getting back', () => {
 
   it('sends a surveyor back to their own list instead', async () => {
     mocks.viewer = { viewer: null, isSurveyor: true, canBuild: false }
-    render(<FillPage surveyId="survey-1" />)
+    renderFill(<FillPage surveyId="survey-1" />)
     expect((await screen.findByText('My surveys')).getAttribute('href')).toBe('/surveys')
   })
 })
@@ -349,8 +407,9 @@ describe('FillPage typing in a paper form', () => {
     })
   })
 
-  beforeEach(() => {
+  beforeEach(async () => {
     localStorage.clear()
+    await freshOfflineDb()
     setOnline(true)
     mocks.submit.mockReset()
     mocks.navigate.mockReset()
@@ -366,7 +425,7 @@ describe('FillPage typing in a paper form', () => {
 
   it('records the answers under the printed number, for whoever the number belongs to', async () => {
     mocks.submit.mockResolvedValue({ serial: 137, surveyNumber: 'ACBUS-137' })
-    render(<FillPage surveyId="survey-1" paperSerial={137} />)
+    renderFill(<FillPage surveyId="survey-1" paperSerial={137} />)
     expect(await screen.findByText(/Typing in paper form/)).toBeTruthy()
     expect(screen.getAllByText('ACBUS-137').length).toBeGreaterThan(0)
 
@@ -378,15 +437,130 @@ describe('FillPage typing in a paper form', () => {
 
   it('refuses a number that is already recorded before anything is typed', async () => {
     mocks.paperCheck = { number: 'ACBUS-137', taken: true, problem: 'ACBUS-137 is already recorded.', owner: null }
-    render(<FillPage surveyId="survey-1" paperSerial={137} />)
+    renderFill(<FillPage surveyId="survey-1" paperSerial={137} />)
     expect((await screen.findByRole('alert')).textContent).toMatch(/already recorded/)
     expect(screen.queryByPlaceholderText('Type here')).toBeNull()
   })
 
   it('opens a paper form from the number typed in', async () => {
-    render(<FillPage surveyId="survey-1" />)
+    renderFill(<FillPage surveyId="survey-1" />)
     fireEvent.change(await screen.findByLabelText(/Type in a paper form/), { target: { value: '42' } })
     fireEvent.click(screen.getByRole('button', { name: 'Open' }))
     expect(mocks.navigate).toHaveBeenCalledWith(expect.objectContaining({ search: { paper: 42 } }))
+  })
+})
+
+describe('FillPage with no connection', () => {
+  let encoded: unknown
+  beforeAll(() => {
+    window.scrollTo = vi.fn()
+    encoded = encodeQuestionnaire({
+      ...createQuestionnaire(),
+      id: 'survey-1',
+      surveyCodePrefix: 'ACBUS-',
+      questions: [
+        {
+          ...(createQuestion('short_text') as TextQuestion),
+          label: text('Your occupation'),
+          placeholder: text('Type here'),
+          required: true,
+        },
+      ],
+    })
+  })
+
+  beforeEach(async () => {
+    localStorage.clear()
+    await freshOfflineDb()
+    setOnline(true)
+    mocks.submit.mockReset()
+    mocks.stored = encoded
+    // A signed-in account the admin gave survey numbers 101–200.
+    mocks.viewer = {
+      viewer: { id: 'user-ikra', approved: true, displayName: 'Ikra', code: 'S01' },
+      isSurveyor: false,
+      canBuild: true,
+    }
+    mocks.kit = { start: 101, end: 200, taken: [101, 102] }
+  })
+
+  afterEach(() => {
+    cleanup()
+    mocks.kit = null
+    mocks.nextSerial = 5
+    mocks.viewer = { viewer: null, isSurveyor: false, canBuild: false }
+  })
+
+  it('numbers the interview from the surveyor’s own block and asks the server to keep it', async () => {
+    mocks.submit.mockResolvedValue({ serial: 103, surveyNumber: 'ACBUS-103' })
+    renderFill(<FillPage surveyId="survey-1" />)
+    expect(await screen.findByText('ACBUS-103')).toBeTruthy()
+
+    await fillAndSubmit()
+    await screen.findByText('Response recorded')
+    expect(mocks.submit.mock.calls[0][0]).toMatchObject({ claimedSerial: 103 })
+  })
+
+  it('keeps an offline interview under its number, and gives the next one the number after', async () => {
+    // Held by Convex until the connection is back: neither resolves nor fails.
+    mocks.submit.mockReturnValue(new Promise(() => undefined))
+    setOnline(false)
+    renderFill(<FillPage surveyId="survey-1" />)
+    await screen.findByText('ACBUS-103')
+
+    await fillAndSubmit()
+    await screen.findByText('Saved on this device')
+    // The confirmation says which number it is kept under.
+    expect(screen.getByText('ACBUS-103')).toBeTruthy()
+    const [kept] = await readOutbox()
+    expect(kept).toMatchObject({ claimedSerial: 103, surveyNumber: 'ACBUS-103', surveyorId: 'user-ikra' })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Start a new response' }))
+    expect(await screen.findByText('ACBUS-104')).toBeTruthy()
+  })
+
+  it('opens the copy saved on the tablet when the server does not answer', async () => {
+    const { saveOfflineSurvey } = await import('#/lib/offline/surveys')
+    await saveOfflineSurvey('survey-1', {
+      stored: encoded,
+      savedAt: Date.now(),
+      kit: { start: 101, end: 200, taken: [101, 102, 103] },
+      kitOwner: 'user-ikra',
+    })
+    mocks.stored = undefined
+    mocks.kit = undefined
+    setOnline(false)
+    renderFill(<FillPage surveyId="survey-1" />)
+
+    await screen.findByPlaceholderText('Type here')
+    expect(screen.getByText(/this is the copy saved on this tablet/)).toBeTruthy()
+    // Numbered from the block saved with it.
+    expect(screen.getByText('ACBUS-104')).toBeTruthy()
+  })
+
+  it('does not number from a block saved for another account', async () => {
+    const { saveOfflineSurvey } = await import('#/lib/offline/surveys')
+    await saveOfflineSurvey('survey-1', {
+      stored: encoded,
+      savedAt: Date.now(),
+      kit: { start: 101, end: 200, taken: [] },
+      kitOwner: 'someone-else',
+    })
+    mocks.stored = undefined
+    mocks.kit = undefined
+    mocks.nextSerial = undefined
+    setOnline(false)
+    renderFill(<FillPage surveyId="survey-1" />)
+
+    await screen.findByPlaceholderText('Type here')
+    expect(screen.queryByText('ACBUS-101')).toBeNull()
+    expect(screen.getByText('given when sent')).toBeTruthy()
+  })
+
+  it('says so when the survey was never saved on this tablet', async () => {
+    mocks.stored = undefined
+    setOnline(false)
+    renderFill(<FillPage surveyId="survey-1" />)
+    expect(await screen.findByText('This survey is not saved on this tablet')).toBeTruthy()
   })
 })

@@ -20,6 +20,7 @@ import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SurveysIndexRouteImport } from './routes/surveys/index'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
+import { Route as RTokenRouteImport } from './routes/r/$token'
 import { Route as AdminSignupRouteImport } from './routes/admin/signup'
 import { Route as AdminResponsesRouteImport } from './routes/admin/responses'
 import { Route as AdminLoginRouteImport } from './routes/admin/login'
@@ -89,6 +90,11 @@ const AdminIndexRoute = AdminIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => AdminRoute,
+} as any)
+const RTokenRoute = RTokenRouteImport.update({
+  id: '/r/$token',
+  path: '/r/$token',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const AdminSignupRoute = AdminSignupRouteImport.update({
   id: '/signup',
@@ -180,6 +186,7 @@ export interface FileRoutesByFullPath {
   '/admin/login': typeof AdminLoginRoute
   '/admin/responses': typeof AdminResponsesRoute
   '/admin/signup': typeof AdminSignupRoute
+  '/r/$token': typeof RTokenRoute
   '/admin/': typeof AdminIndexRoute
   '/surveys/': typeof SurveysIndexRoute
   '/surveys/$surveyId/chat': typeof SurveysSurveyIdChatRoute
@@ -206,6 +213,7 @@ export interface FileRoutesByTo {
   '/admin/login': typeof AdminLoginRoute
   '/admin/responses': typeof AdminResponsesRoute
   '/admin/signup': typeof AdminSignupRoute
+  '/r/$token': typeof RTokenRoute
   '/admin': typeof AdminIndexRoute
   '/surveys': typeof SurveysIndexRoute
   '/surveys/$surveyId/chat': typeof SurveysSurveyIdChatRoute
@@ -234,6 +242,7 @@ export interface FileRoutesById {
   '/admin/login': typeof AdminLoginRoute
   '/admin/responses': typeof AdminResponsesRoute
   '/admin/signup': typeof AdminSignupRoute
+  '/r/$token': typeof RTokenRoute
   '/admin/': typeof AdminIndexRoute
   '/surveys/': typeof SurveysIndexRoute
   '/surveys/$surveyId/chat': typeof SurveysSurveyIdChatRoute
@@ -263,6 +272,7 @@ export interface FileRouteTypes {
     | '/admin/login'
     | '/admin/responses'
     | '/admin/signup'
+    | '/r/$token'
     | '/admin/'
     | '/surveys/'
     | '/surveys/$surveyId/chat'
@@ -289,6 +299,7 @@ export interface FileRouteTypes {
     | '/admin/login'
     | '/admin/responses'
     | '/admin/signup'
+    | '/r/$token'
     | '/admin'
     | '/surveys'
     | '/surveys/$surveyId/chat'
@@ -316,6 +327,7 @@ export interface FileRouteTypes {
     | '/admin/login'
     | '/admin/responses'
     | '/admin/signup'
+    | '/r/$token'
     | '/admin/'
     | '/surveys/'
     | '/surveys/$surveyId/chat'
@@ -339,6 +351,7 @@ export interface RootRouteChildren {
   PrivacyRoute: typeof PrivacyRoute
   SignupRoute: typeof SignupRoute
   TermsRoute: typeof TermsRoute
+  RTokenRoute: typeof RTokenRoute
   SurveysIndexRoute: typeof SurveysIndexRoute
   SurveysSurveyIdChatRoute: typeof SurveysSurveyIdChatRoute
   SurveysSurveyIdFillRoute: typeof SurveysSurveyIdFillRoute
@@ -424,6 +437,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/admin/'
       preLoaderRoute: typeof AdminIndexRouteImport
       parentRoute: typeof AdminRoute
+    }
+    '/r/$token': {
+      id: '/r/$token'
+      path: '/r/$token'
+      fullPath: '/r/$token'
+      preLoaderRoute: typeof RTokenRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/admin/signup': {
       id: '/admin/signup'
@@ -566,6 +586,7 @@ const rootRouteChildren: RootRouteChildren = {
   PrivacyRoute: PrivacyRoute,
   SignupRoute: SignupRoute,
   TermsRoute: TermsRoute,
+  RTokenRoute: RTokenRoute,
   SurveysIndexRoute: SurveysIndexRoute,
   SurveysSurveyIdChatRoute: SurveysSurveyIdChatRoute,
   SurveysSurveyIdFillRoute: SurveysSurveyIdFillRoute,

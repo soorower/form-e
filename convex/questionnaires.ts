@@ -165,6 +165,12 @@ export const remove = mutation({
       .collect()
     for (const assignment of assignments) await ctx.db.delete(assignment._id)
 
+    const links = await ctx.db
+      .query('shareLinks')
+      .withIndex('by_questionnaire', (q) => q.eq('questionnaireId', id))
+      .collect()
+    for (const link of links) await ctx.db.delete(link._id)
+
     const messages = await ctx.db
       .query('messages')
       .withIndex('by_questionnaire', (q) => q.eq('questionnaireId', id))

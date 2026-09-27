@@ -2,6 +2,7 @@ import { Link } from '@tanstack/react-router'
 import { useMutation, useQuery } from 'convex/react'
 import {
   ClipboardList,
+  CloudOff,
   Eye,
   FileText,
   MessageSquare,
@@ -16,7 +17,12 @@ import { api } from '../../../convex/_generated/api'
 import { useConvexReady } from '#/lib/convex/hooks'
 import { decodeQuestionnaires } from '#/lib/convex/questionnaire-codec'
 import { useViewer, type Viewer } from '#/hooks/useViewer'
+import { ShareLinkButton } from '#/components/ShareLinkButton'
 import { LocalDataImport } from '#/components/LocalDataImport'
+import { BackupImport } from '#/components/offline/BackupImport'
+import { MakeOfflineButton } from '#/components/offline/MakeOfflineButton'
+import { UnsentPanel } from '#/components/offline/UnsentPanel'
+import { useSavedSurveys } from '#/hooks/useOfflineSurvey'
 import { useSurveyPaths } from '#/components/auth/area'
 import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
@@ -104,7 +110,12 @@ export function SurveysPage() {
         </Button>
       </div>
 
+      <div className="mt-4">
+        <BackupImport />
+      </div>
+
       <LocalDataImport />
+      <UnsentPanel className="mt-6" />
 
       {surveys === undefined ? (
         <p className="mt-10 text-muted-foreground">Loading…</p>
@@ -150,6 +161,9 @@ export function SurveysPage() {
                       </Badge>
                     ))}
                     {groupBadge(survey)}
+                    <div className="mt-2 w-full">
+                      <MakeOfflineButton surveyId={survey.id} viewerId={viewer?.id ?? null} />
+                    </div>
                   </CardContent>
                   <CardFooter className="gap-2">
                     <Button
@@ -214,6 +228,11 @@ function SurveyorHome({
   const ready = useConvexReady()
   // The survey numbers the admin gave this surveyor, by survey.
   const ranges = useQuery(api.teams.myRanges, ready ? {} : 'skip')
+  // With no connection the list never comes: the surveys saved on this
+  // tablet stand in, each ready to start.
+  const saved = useSavedSurveys(surveys === undefined)
+  const fromDevice = surveys === undefined && saved !== undefined
+  const shown = surveys ?? saved
   const mine = (row: ResponseProgress) =>
     (viewer.code !== null && row.surveyorCode === viewer.code) ||
     row.enumerator.trim() === viewer.displayName
@@ -236,12 +255,24 @@ function SurveyorHome({
         </p>
       </div>
 
-      {surveys === undefined ? (
+      <UnsentPanel className="mt-6" />
+
+      {fromDevice && (
+        <p className="mt-6 flex items-start gap-2 rounded-xl border border-border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
+          <CloudOff className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+          No connection: these are the surveys saved on this tablet. Interviews are kept here and
+          sent when the internet is back.
+        </p>
+      )}
+
+      {shown === undefined ? (
         <p className="mt-10 text-muted-foreground">Loading…</p>
-      ) : surveys.length === 0 ? (
+      ) : shown.length === 0 ? (
         <div className="mt-10 flex flex-col items-center gap-3 rounded-2xl border border-dashed border-border p-12 text-center">
           <ClipboardList className="size-10 text-muted-foreground" />
-          <p className="text-lg font-semibold">No surveys assigned yet</p>
+          <p className="text-lg font-semibold">
+            {fromDevice ? 'No surveys saved on this tablet' : 'No surveys assigned yet'}
+          </p>
           <p className="max-w-sm text-sm text-muted-foreground">
             A survey builder or the admin puts you on a survey's team. It appears here the moment
             they do.
@@ -249,7 +280,7 @@ function SurveyorHome({
         </div>
       ) : (
         <ul className="mt-8 grid gap-4 sm:grid-cols-2">
-          {surveys.map((survey) => {
+          {shown.map((survey) => {
             const title = pickText(survey.title, survey.defaultLanguage) || 'Untitled survey'
             const rows = (progress ?? []).filter((row) => row.questionnaireId === survey.id)
             const own = rows.filter(mine)
@@ -296,6 +327,7 @@ function SurveyorHome({
                     </div>
                   </CardContent>
                   <CardFooter className="flex-wrap gap-2">
+                    <MakeOfflineButton surveyId={survey.id} viewerId={viewer.id} />
                     <Button
                       size="sm"
                       nativeButton={false}
@@ -304,6 +336,7 @@ function SurveyorHome({
                       <Play data-icon="inline-start" />
                       Start survey
                     </Button>
+                    <ShareLinkButton surveyId={survey.id} size="sm" />
                     {range && (
                       <Button
                         variant="outline"

@@ -4,6 +4,7 @@ import { useQuery } from 'convex/react'
 import { ArrowLeft, Eye, Inbox, MessageSquare, Pencil, Printer, Users } from 'lucide-react'
 import { api } from '../../../convex/_generated/api'
 import { useSurveyPaths } from '#/components/auth/area'
+import { ShareLinkButton } from '#/components/ShareLinkButton'
 import { QuestionnaireBuilder } from '#/components/builder/QuestionnaireBuilder'
 import { QuestionnaireRenderer } from '#/components/renderer/QuestionnaireRenderer'
 import { ResponsesPanel } from '#/components/responses/ResponsesPanel'
@@ -108,6 +109,7 @@ export function SurveyEditorPage({ surveyId }: { surveyId: string }) {
           <Eye data-icon="inline-start" />
           Open for respondents
         </Button>
+        <ShareLinkButton surveyId={surveyId} />
       </div>
 
       {backup && (

@@ -91,6 +91,11 @@ describe('responsesToRows', () => {
     expect(rows[0].Reliability_A).toBe('')
   })
 
+  it('marks a response given through a share link as Link', () => {
+    const rows = responsesToRows(buildQuestionnaire(), [{ ...response, link: true }])
+    expect(rows[0].Source).toBe('Link')
+  })
+
   it('uses the requested language for option text', () => {
     const rows = responsesToRows(buildQuestionnaire(), [response], 'bn')
     expect(rows[0]['1. জেন্ডার']).toBe('১) পুরুষ')

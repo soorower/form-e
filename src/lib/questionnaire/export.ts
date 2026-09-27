@@ -247,7 +247,7 @@ export function responsesToRows(
       'Received at': response.receivedAt === undefined ? '' : localIso(response.receivedAt),
       Language: response.language,
       // Typed in from a printed form, or collected on a tablet.
-      Source: response.paper ? 'Paper' : 'Tablet',
+      Source: response.paper ? 'Paper' : response.link ? 'Link' : 'Tablet',
     }
     const scenarioRows: ExportRow[] = []
 
