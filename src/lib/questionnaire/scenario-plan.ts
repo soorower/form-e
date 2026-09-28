@@ -1,5 +1,11 @@
-import { fromBanglaDigits, parseDelimited, type CardExposure } from './cards'
-import type { ChoiceCard, ChoiceExperimentQuestion, ChoiceScenarioAnswer, ScenarioPlanRow } from './types'
+import { drawScenarios, fromBanglaDigits, parseDelimited, type CardExposure } from './cards'
+import type {
+  ChoiceCard,
+  ChoiceExperimentQuestion,
+  ChoiceScenarioAnswer,
+  Question,
+  ScenarioPlanRow,
+} from './types'
 
 /**
  * The scenario plan: the creator's own allocation of design cards to
@@ -374,3 +380,59 @@ export const EXAMPLE_SCENARIO_PLAN = [
   '4\t43\t47\t15\t17\t15\t25\t17\t45\t38',
   '5\t50\t44\t24\t9\t23\t22\t15\t10\t7',
 ].join('\n')
+
+/**
+ * The cards each choice block that picks for itself should show: a random
+ * block, or a balanced one the server has not answered for. They are drawn
+ * here all at once, in block order, rather than by each block on its own,
+ * because blocks drawing side by side on one page cannot see each other's
+ * cards; drawn together, each passes over the card numbers the interview
+ * already shows (answered blocks, the server's cards, planned rows), so a
+ * respondent never meets the same card number twice. A balanced block is
+ * left out until its counts (`exposure`) are in, as it waits for the server.
+ */
+export function drawBlocksTogether(
+  questions: Question[],
+  answers: Record<string, unknown>,
+  assigned: Record<string, { sets: number[] }> | undefined,
+  exposure: Record<string, CardExposure> | undefined,
+  planExposure: Record<string, CardExposure> | undefined,
+  random?: (max: number) => number,
+): Record<string, number[]> {
+  const blocks = questions.filter(
+    (question): question is ChoiceExperimentQuestion =>
+      question.type === 'choice_experiment' && question.cards.length > 0,
+  )
+  const given = new Set<number>()
+  const open: ChoiceExperimentQuestion[] = []
+  for (const block of blocks) {
+    const answer = answers[block.id] as { scenarios?: { set?: unknown }[] } | null | undefined
+    let sets: unknown[] | undefined = Array.isArray(answer?.scenarios)
+      ? answer.scenarios.map((scenario) => scenario?.set)
+      : assigned?.[block.id]?.sets
+    if (!sets && followsPlan(block) && exposure) {
+      // The row this block will take for itself, the way ChoiceExperimentField does.
+      sets = scenariosFromPlanRow(block, leastUsedPlanRow(block, planExposure?.[block.id])).map(
+        (scenario) => scenario.set,
+      )
+    }
+    if (sets) {
+      for (const set of sets) if (typeof set === 'number') given.add(set)
+    } else if (!followsPlan(block)) {
+      open.push(block)
+    }
+  }
+  const drawn: Record<string, number[]> = {}
+  for (const block of open) {
+    if (block.drawMode === 'balanced' && !exposure) continue
+    const sets = drawScenarios(
+      block,
+      random,
+      exposure ? (exposure[block.id] ?? {}) : undefined,
+      given,
+    ).map((scenario) => scenario.set)
+    for (const set of sets) given.add(set)
+    drawn[block.id] = sets
+  }
+  return drawn
+}

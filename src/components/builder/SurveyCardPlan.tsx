@@ -160,8 +160,9 @@ export function SurveyCardPlan({
             </Select>
             <p className="text-xs text-muted-foreground">
               {mode === 'balanced' &&
-                'Each new interview is handed the cards used least so far, counted across all tablets. The most-used and the least-used card never differ by more than one showing.'}
-              {mode === 'random' && 'Cards are drawn at random, so some come up more often than others.'}
+                'Each new interview is handed the cards used least so far, counted across all tablets. No respondent sees the same card number twice, across all the blocks, and the most-used and the least-used card stay within a showing or two of each other.'}
+              {mode === 'random' &&
+                'Cards are drawn at random, so some come up more often than others. No respondent sees the same card number twice.'}
               {usesPlan &&
                 'Nothing is drawn: your sheet decides. The row follows the survey number: number 1 answers row 1, number 2 row 2, and after the last row it starts again at row 1, so the plan repeats until the target is reached. A surveyor given numbers 101–200 gets the rows for those numbers, the same ones printed on their paper forms.'}
             </p>

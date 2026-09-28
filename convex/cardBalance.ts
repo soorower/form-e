@@ -86,17 +86,30 @@ function shuffle<T>(items: T[], random: (max: number) => number) {
  * order. Taking the least-used first keeps the most- and least-used card
  * within one of each other: if they were before the draw, they still are
  * after it, however `count` divides into the number of cards.
+ *
+ * `avoid` holds card numbers this interview has already been given in its
+ * other choice blocks. They are passed over while the block has enough other
+ * cards, so one respondent never sees the same card number twice across the
+ * whole interview (9 cards from three blocks of 50 are 9 different numbers).
+ * Only a block too small to fill otherwise falls back on them. A card passed
+ * over stays least-used and goes to the next interview, so the spread between
+ * cards can reach two for as long as that takes (over 500 respondents of
+ * three blocks of 50, a card ends on 29 rather than 30 now and then).
  */
 export function pickLeastUsed(
   sets: number[],
   count: number,
   usage: CardCounts,
   random: (max: number) => number = (max) => Math.floor(Math.random() * max),
+  avoid: ReadonlySet<number> = new Set(),
 ): number[] {
   const pool = [...new Set(sets)]
   // Shuffle first so the stable sort leaves equal counts in random order.
   shuffle(pool, random)
-  pool.sort((a, b) => (usage.get(a) ?? 0) - (usage.get(b) ?? 0))
+  pool.sort(
+    (a, b) =>
+      Number(avoid.has(a)) - Number(avoid.has(b)) || (usage.get(a) ?? 0) - (usage.get(b) ?? 0),
+  )
   const chosen = pool.slice(0, Math.max(0, Math.min(count, pool.length)))
   shuffle(chosen, random)
   return chosen

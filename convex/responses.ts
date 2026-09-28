@@ -770,8 +770,10 @@ export const importBackup = mutation({
  * the ones used least so far, counting the responses recorded and the cards
  * other tablets are showing right now. Convex runs mutations one after the
  * other, so two tablets starting at the same moment cannot be given the same
- * "least-used" cards, and the most- and least-used card stay within one of
- * each other. Asking again with the same response id returns the same cards.
+ * "least-used" cards, and the most- and least-used card stay within one or
+ * two of each other. No card number is given twice in one interview, across
+ * all its blocks. Asking again with the same response id returns the same
+ * cards.
  */
 export const drawCards = mutation({
   // `shareToken`: answered through a share link, so the number held is the
@@ -849,6 +851,17 @@ export const drawCards = mutation({
           )
         : undefined
 
+    // Card numbers this interview has been given so far. A balanced block
+    // passes over them, so a respondent never meets the same card number
+    // twice: nine cards over three blocks are nine different numbers. The
+    // planned blocks' cards are the creator's own and are counted first.
+    const given = new Set<number>()
+    for (const block of planned) {
+      for (const set of block.scenarioPlan!.find((entry) => entry.row === sharedRow)?.sets ?? []) {
+        given.add(set)
+      }
+    }
+
     const drawn = []
     for (const block of blocks) {
       const plan = block.drawMode === 'plan' ? (block.scenarioPlan ?? []) : []
@@ -867,7 +880,10 @@ export const drawCards = mutation({
           block.cards.map((card) => card.set),
           block.scenariosPerRespondent,
           combined(block.id, shown, reserved),
+          undefined,
+          given,
         )
+        for (const set of sets) given.add(set)
       }
       await ctx.db.insert('cardDraws', {
         questionnaireId,

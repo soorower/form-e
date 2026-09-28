@@ -8,6 +8,7 @@ import {
   parseScenarioPlan,
   scenariosFromPlanRow,
   splitScenarioPlan,
+  drawBlocksTogether,
 } from './scenario-plan'
 import type { ChoiceExperimentQuestion } from './types'
 
@@ -288,5 +289,39 @@ describe('checkScenarioPlan', () => {
     expect(check.unusedSets).toEqual([4])
     expect(check.rowsWithRepeats).toEqual([2])
     expect(check.unevenRows).toEqual([3])
+  })
+})
+
+describe('drawBlocksTogether', () => {
+  const block = (id: string, drawMode: ChoiceExperimentQuestion['drawMode']) => {
+    const question = createQuestion('choice_experiment') as ChoiceExperimentQuestion
+    return {
+      ...question,
+      id,
+      drawMode,
+      scenariosPerRespondent: 3,
+      cards: Array.from({ length: 12 }, (_, i) => ({ set: i + 1, levels: {} })),
+    }
+  }
+
+  it('draws the blocks side by side without giving a card number twice', () => {
+    const blocks = [block('a', 'balanced'), block('b', 'balanced'), block('c', 'random')]
+    for (let i = 0; i < 50; i++) {
+      const drawn = drawBlocksTogether(blocks, {}, undefined, {}, {})
+      const all = [...drawn.a, ...drawn.b, ...drawn.c]
+      expect(all).toHaveLength(9)
+      expect(new Set(all).size).toBe(9)
+    }
+  })
+
+  it("keeps clear of the server's cards and answered blocks, and waits for counts", () => {
+    const blocks = [block('a', 'balanced'), block('b', 'balanced'), block('c', 'random')]
+    const answers = { a: { scenarios: [{ set: 1 }, { set: 2 }, { set: 3 }] } }
+    for (let i = 0; i < 30; i++) {
+      const drawn = drawBlocksTogether(blocks, answers, { b: { sets: [4, 5, 6] } }, undefined, undefined)
+      // A balanced block with no counts yet waits; the random one draws round the rest.
+      expect(Object.keys(drawn)).toEqual(['c'])
+      expect(drawn.c.every((set) => set > 6)).toBe(true)
+    }
   })
 })

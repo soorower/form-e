@@ -18,6 +18,31 @@ const spread = (usage: CardCounts, all: number[]) => {
 }
 
 describe('pickLeastUsed', () => {
+  it('never gives one interview the same card number twice across its blocks', () => {
+    // The AC Bus survey: three blocks of 50 cards, three scenarios each, 500 respondents.
+    const all = sets(50)
+    const usage = [new Map(), new Map(), new Map()] as CardCounts[]
+    for (let respondent = 0; respondent < 500; respondent++) {
+      const given = new Set<number>()
+      for (const block of usage) {
+        const chosen = pickLeastUsed(all, 3, block, undefined, given)
+        for (const set of chosen) {
+          expect(given.has(set)).toBe(false)
+          given.add(set)
+          block.set(set, (block.get(set) ?? 0) + 1)
+        }
+      }
+      expect(given.size).toBe(9)
+      for (const block of usage) expect(spread(block, all)).toBeLessThanOrEqual(2)
+    }
+  })
+
+  it('falls back on numbers already given only when a block has too few others', () => {
+    const chosen = pickLeastUsed(sets(4), 3, new Map(), undefined, new Set([1, 2]))
+    expect(chosen).toContain(3)
+    expect(chosen).toContain(4)
+  })
+
   it('takes the least-used cards, never the same one twice', () => {
     const usage: CardCounts = new Map([
       [1, 5],

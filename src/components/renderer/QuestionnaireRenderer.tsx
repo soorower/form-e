@@ -26,6 +26,7 @@ import type {
   SurveyResponse,
 } from '#/lib/questionnaire/types'
 import type { CardExposure } from '#/lib/questionnaire/cards'
+import { drawBlocksTogether } from '#/lib/questionnaire/scenario-plan'
 import { cn } from '#/lib/utils'
 import { QuestionField, questionDomId, type AnswerUpdate } from './QuestionField'
 import { RESPONDENT_DOM_ID, RespondentFields } from './RespondentFields'
@@ -184,6 +185,17 @@ export function QuestionnaireRenderer({
   const missing = questionnaire.questions
     .filter((question) => question.required && !isAnswered(question, answers[question.id]))
     .map((question) => question.id)
+
+  // Cards for the blocks that pick their own (no server draw for them), drawn
+  // together so no card number turns up twice in one interview. Only read by
+  // a block that has not drawn yet; once drawn, its answer holds its cards.
+  const selfDrawn = drawBlocksTogether(
+    questionnaire.questions,
+    answers,
+    cardDraws,
+    cardExposure,
+    planExposure,
+  )
 
   // What leaving the page now would lose.
   const dirty = submitted === null && hasAnyInput(questionnaire.questions, answers, respondent)
@@ -595,7 +607,7 @@ export function QuestionnaireRenderer({
               invalid={(attempted || stepAttempted) && missing.includes(current.id)}
               exposure={cardExposure ? (cardExposure[current.id] ?? {}) : undefined}
               planExposure={planExposure ? (planExposure[current.id] ?? {}) : undefined}
-              assignedSets={cardDraws?.[current.id]?.sets}
+              assignedSets={cardDraws?.[current.id]?.sets ?? selfDrawn[current.id]}
               assignedPlanRow={cardDraws?.[current.id]?.planRow}
             />
           ) : (
@@ -665,7 +677,7 @@ export function QuestionnaireRenderer({
               invalid={attempted && missing.includes(question.id)}
               exposure={cardExposure ? (cardExposure[question.id] ?? {}) : undefined}
               planExposure={planExposure ? (planExposure[question.id] ?? {}) : undefined}
-              assignedSets={cardDraws?.[question.id]?.sets}
+              assignedSets={cardDraws?.[question.id]?.sets ?? selfDrawn[question.id]}
               assignedPlanRow={cardDraws?.[question.id]?.planRow}
             />
           ))}

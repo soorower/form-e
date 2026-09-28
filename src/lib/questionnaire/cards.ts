@@ -841,32 +841,51 @@ function shuffleFront<T>(pool: T[], count: number, random: (max: number) => numb
  * so far (ties broken at random), so exposure evens out across respondents
  * the way a pre-allocated frequency sheet does; without exposure counts it
  * falls back to a uniform draw.
+ *
+ * `avoid` holds card numbers the interview already shows in its other blocks.
+ * Either way they are passed over while the block has enough other cards, so
+ * a respondent never meets the same card number twice (mirrors
+ * `pickLeastUsed` in convex/cardBalance.ts).
  */
 export function drawScenarios(
   question: Pick<ChoiceExperimentQuestion, 'cards' | 'scenariosPerRespondent'> &
     Partial<Pick<ChoiceExperimentQuestion, 'drawMode'>>,
   random: (max: number) => number = randomIndex,
   exposure?: CardExposure,
+  avoid: ReadonlySet<number> = new Set(),
 ): ChoiceScenarioAnswer[] {
   const pool = [...question.cards]
   const count = Math.min(Math.max(0, question.scenariosPerRespondent), pool.length)
-
-  if (question.drawMode === 'balanced' && exposure && pool.length > 0) {
-    // Shuffle first so equal exposure counts are ordered at random, then a
-    // stable sort brings the least-shown cards to the front.
-    shuffleFront(pool, pool.length, random)
-    pool.sort((a, b) => (exposure[a.set] ?? 0) - (exposure[b.set] ?? 0))
-    const chosen = pool.slice(0, count)
-    shuffleFront(chosen, chosen.length, random)
-    return chosen.map((card) => ({ set: card.set, levels: { ...card.levels }, choice: '' }))
-  }
-
-  shuffleFront(pool, count, random)
-  return pool.slice(0, count).map((card) => ({
+  const toScenario = (card: ChoiceCard): ChoiceScenarioAnswer => ({
     set: card.set,
     levels: { ...card.levels },
     choice: '',
-  }))
+  })
+
+  if (question.drawMode === 'balanced' && exposure && pool.length > 0) {
+    // Shuffle first so equal exposure counts are ordered at random, then a
+    // stable sort brings the cards not shown yet in this interview, and among
+    // those the least-shown, to the front.
+    shuffleFront(pool, pool.length, random)
+    pool.sort(
+      (a, b) =>
+        Number(avoid.has(a.set)) - Number(avoid.has(b.set)) ||
+        (exposure[a.set] ?? 0) - (exposure[b.set] ?? 0),
+    )
+    const chosen = pool.slice(0, count)
+    shuffleFront(chosen, chosen.length, random)
+    return chosen.map(toScenario)
+  }
+
+  const fresh = pool.filter((card) => !avoid.has(card.set))
+  shuffleFront(fresh, Math.min(count, fresh.length), random)
+  if (fresh.length >= count) return fresh.slice(0, count).map(toScenario)
+  // Too few new cards: every one of them, topped up from the ones already shown.
+  const seen = pool.filter((card) => avoid.has(card.set))
+  shuffleFront(seen, count - fresh.length, random)
+  const chosen = [...fresh, ...seen.slice(0, count - fresh.length)]
+  shuffleFront(chosen, chosen.length, random)
+  return chosen.map(toScenario)
 }
 
 /**
