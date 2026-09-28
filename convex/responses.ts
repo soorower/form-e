@@ -27,6 +27,7 @@ import {
   displayName,
   isApproved,
   questionnaireByAppId,
+  requireAdmin,
   requireBuilder,
   roleOf,
   trustedEmail,
@@ -775,6 +776,65 @@ export const importBackup = mutation({
  * all its blocks. Asking again with the same response id returns the same
  * cards.
  */
+/**
+ * Responses deleted per `resetSurvey` call. A response can hold up to
+ * MAX_ANSWERS_BYTES, so a batch stays well inside one transaction's read
+ * limit; the admin's browser calls again until `done`.
+ */
+const RESET_BATCH = 25
+
+/**
+ * Admin only: deletes a survey's collected responses, to start the real
+ * survey after testing. Each call deletes up to RESET_BATCH responses with
+ * their summary rows and card draws; once none are left it clears the rest
+ * (draws of interviews still going on, leftover summaries) and reopens the
+ * numbered links those responses answered. Survey numbers then start again
+ * from each block's start (or 1). The survey, its team, number blocks,
+ * links and chat stay.
+ */
+export const resetSurvey = mutation({
+  args: { questionnaireId: v.string() },
+  handler: async (ctx, { questionnaireId }) => {
+    await requireAdmin(ctx)
+    const questionnaire = await questionnaireByAppId(ctx, questionnaireId)
+    if (!questionnaire) throw new ConvexError('That survey no longer exists.')
+
+    const batch = await ctx.db
+      .query('responses')
+      .withIndex('by_questionnaire', (q) => q.eq('questionnaireId', questionnaireId))
+      .take(RESET_BATCH)
+    for (const response of batch) {
+      const summaries = await ctx.db
+        .query('responseSummaries')
+        .withIndex('by_response', (q) => q.eq('responseId', response.id))
+        .collect()
+      for (const summary of summaries) await ctx.db.delete(summary._id)
+      await deleteDrawsFor(ctx, response.id)
+      await ctx.db.delete(response._id)
+    }
+    if (batch.length === RESET_BATCH) return { deleted: batch.length, done: false }
+
+    const summaries = await ctx.db
+      .query('responseSummaries')
+      .withIndex('by_questionnaire', (q) => q.eq('questionnaireId', questionnaireId))
+      .collect()
+    for (const summary of summaries) await ctx.db.delete(summary._id)
+    const draws = await ctx.db
+      .query('cardDraws')
+      .withIndex('by_questionnaire', (q) => q.eq('questionnaireId', questionnaireId))
+      .collect()
+    for (const draw of draws) await ctx.db.delete(draw._id)
+    const links = await ctx.db
+      .query('shareLinks')
+      .withIndex('by_questionnaire', (q) => q.eq('questionnaireId', questionnaireId))
+      .collect()
+    for (const link of links) {
+      if (link.responseId !== undefined) await ctx.db.patch(link._id, { responseId: undefined })
+    }
+    return { deleted: batch.length, done: true }
+  },
+})
+
 export const drawCards = mutation({
   // `shareToken`: answered through a share link, so the number held is the
   // next one of whoever shared it, whoever happens to be signed in (as

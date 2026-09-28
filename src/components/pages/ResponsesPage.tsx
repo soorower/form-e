@@ -15,7 +15,14 @@ import { cn } from '#/lib/utils'
  * below, the same panel as the editor's Responses tab. `surveyParam` (the
  * `?survey=` query) keeps the choice in the address.
  */
-export function ResponsesPage({ surveyParam }: { surveyParam?: string }) {
+export function ResponsesPage({
+  surveyParam,
+  canReset = false,
+}: {
+  surveyParam?: string
+  /** Admin only: each survey's panel offers "Reset responses". */
+  canReset?: boolean
+}) {
   const ready = useConvexReady()
   const navigate = useNavigate()
   const listed = useQuery(api.questionnaires.list, ready ? {} : 'skip')
@@ -98,7 +105,9 @@ export function ResponsesPage({ surveyParam }: { surveyParam?: string }) {
             })}
           </div>
 
-          {selected && <ResponsesPanel key={selected.id} questionnaire={selected} />}
+          {selected && (
+            <ResponsesPanel key={selected.id} questionnaire={selected} canReset={canReset} />
+          )}
         </div>
       )}
     </main>

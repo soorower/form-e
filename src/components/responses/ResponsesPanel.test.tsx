@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createQuestion, createQuestionnaire, text } from '#/lib/questionnaire/factory'
 import type { Questionnaire, SurveyResponse } from '#/lib/questionnaire/types'
@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   rows: [] as unknown[],
   downloadText: vi.fn(),
   downloadBlob: vi.fn(),
+  reset: vi.fn(),
 }))
 
 vi.mock('convex/react', () => ({
@@ -17,6 +18,7 @@ vi.mock('convex/react', () => ({
     args === 'skip'
       ? { results: [], status: 'LoadingFirstPage', loadMore: () => undefined }
       : { results: mocks.rows, status: 'Exhausted', loadMore: () => undefined },
+  useMutation: () => mocks.reset,
 }))
 vi.mock('#/lib/questionnaire/export', async (original) => ({
   ...(await original<typeof import('#/lib/questionnaire/export')>()),
@@ -123,5 +125,55 @@ describe('ResponsesPanel by enumerator', () => {
     const [fileName, csv] = mocks.downloadText.mock.calls[0] as [string, string]
     expect(fileName).toMatch(/^bus-survey-responses-\d{4}/)
     expect(csv.trim().split('\r\n')).toHaveLength(5)
+  })
+})
+
+describe('ResponsesPanel reset', () => {
+  beforeEach(() => {
+    mocks.downloadText.mockReset()
+    mocks.reset.mockReset()
+    mocks.rows = [
+      stored(1, 'Ikra', { occupation: 'Teacher' }),
+      stored(2, 'Nawal', { occupation: 'Driver' }),
+    ]
+  })
+
+  afterEach(cleanup)
+
+  it('is offered only to the admin', async () => {
+    render(<ResponsesPanel questionnaire={survey()} />)
+    await screen.findByText('2 responses')
+    expect(screen.queryByRole('button', { name: /Reset responses/ })).toBeNull()
+  })
+
+  it('warns, offers every response to download, and deletes only once RESET is typed', async () => {
+    mocks.reset
+      .mockResolvedValueOnce({ deleted: 25, done: false })
+      .mockResolvedValueOnce({ deleted: 2, done: true })
+    render(<ResponsesPanel questionnaire={survey()} canReset />)
+    // Narrowed to Ikra on the page: the copy in the dialog still holds everyone.
+    fireEvent.click(await screen.findByRole('button', { name: /^Ikra/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Reset responses/ }))
+
+    const dialog = within(await screen.findByRole('dialog'))
+    expect(dialog.getByText(/Delete all 2 responses\?/)).toBeTruthy()
+    expect(dialog.getByText(/No copy downloaded yet/)).toBeTruthy()
+
+    fireEvent.click(dialog.getByRole('button', { name: /Download CSV/ }))
+    const [fileName, csv] = mocks.downloadText.mock.calls[0] as [string, string]
+    expect(fileName).toMatch(/^bus-survey-responses-\d{4}/)
+    expect(csv).toContain('Nawal')
+    await waitFor(() => expect(dialog.queryByText(/No copy downloaded yet/)).toBeNull())
+
+    const remove = dialog.getByRole('button', { name: /Delete all 2 responses/ })
+    expect((remove as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.change(dialog.getByLabelText(/Type RESET/), { target: { value: 'reset' } })
+    expect((remove as HTMLButtonElement).disabled).toBe(false)
+
+    fireEvent.click(remove)
+    // Called again until the server says it is done.
+    await waitFor(() => expect(mocks.reset).toHaveBeenCalledTimes(2))
+    expect(mocks.reset).toHaveBeenCalledWith({ questionnaireId: 'q' })
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   })
 })

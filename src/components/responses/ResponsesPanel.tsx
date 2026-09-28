@@ -18,15 +18,25 @@ import {
   toCsv,
 } from '#/lib/questionnaire/export'
 import { XLSX_MIME, buildResponsesWorkbook } from '#/lib/questionnaire/export-xlsx'
-import { LANGUAGE_LABELS } from '#/lib/questionnaire/factory'
+import { LANGUAGE_LABELS, pickText } from '#/lib/questionnaire/factory'
 import { activeRespondentFields } from '#/lib/questionnaire/respondent'
-import type { Lang, Questionnaire } from '#/lib/questionnaire/types'
+import type { Lang, Questionnaire, SurveyResponse } from '#/lib/questionnaire/types'
+import { ResetResponsesDialog } from '#/components/responses/ResetResponsesDialog'
 import { useSurveyResponses } from '#/hooks/useSurveyResponses'
 import { UNNAMED } from '#/lib/team/stats'
 import { cn } from '#/lib/utils'
 
 interface ResponsesPanelProps {
   questionnaire: Questionnaire
+  /** Admin only: offers "Reset responses" (download a copy, then delete them all). */
+  canReset?: boolean
+}
+
+/** What one download holds: some responses, their rows, and whose they are (null = everyone). */
+interface ExportTarget {
+  list: SurveyResponse[]
+  rows: ReturnType<typeof responsesToRows>
+  enumerator: string | null
 }
 
 const PREVIEW_ROWS = 25
@@ -43,7 +53,7 @@ const LATEST_COUNT = 10
  * person's responses. The columns still come from every response, so each
  * person's file has the same layout and the files can be stacked.
  */
-export function ResponsesPanel({ questionnaire }: ResponsesPanelProps) {
+export function ResponsesPanel({ questionnaire, canReset = false }: ResponsesPanelProps) {
   const { responses, complete } = useSurveyResponses(questionnaire.id)
   const [lang, setLang] = useState<Lang>(() => defaultExportLanguage(questionnaire))
   const [building, setBuilding] = useState(false)
@@ -78,10 +88,10 @@ export function ResponsesPanel({ questionnaire }: ResponsesPanelProps) {
   )
   const previewRows = responsesToRows(questionnaire, newestFirst, lang)
   const latest = showAllLatest ? newestFirst : newestFirst.slice(0, LATEST_COUNT)
-  const columns = exportColumns(
-    questionnaire,
-    enumerator === null ? rows : responsesToRows(questionnaire, responses, lang),
-  )
+  const allRows = enumerator === null ? rows : responsesToRows(questionnaire, responses, lang)
+  const columns = exportColumns(questionnaire, allRows)
+  const current: ExportTarget = { list: shown, rows, enumerator }
+  const everyone: ExportTarget = { list: responses, rows: allRows, enumerator: null }
   const hasChoiceBlock = questionnaire.questions.some((q) => q.type === 'choice_experiment')
   // Only worth a column in the latest-submissions table when it was collected.
   const showsRespondent = activeRespondentFields(questionnaire).some(
@@ -95,15 +105,19 @@ export function ResponsesPanel({ questionnaire }: ResponsesPanelProps) {
     setShowAllLatest(false)
   }
 
+  async function buildXlsx(target: ExportTarget) {
+    const buffer = await buildResponsesWorkbook(questionnaire, columns, target.rows, lang)
+    downloadBlob(
+      exportFileName(questionnaire, 'xlsx', target.enumerator),
+      new Blob([buffer], { type: XLSX_MIME }),
+    )
+  }
+
   async function downloadXlsx() {
     setBuilding(true)
     setExportError(null)
     try {
-      const buffer = await buildResponsesWorkbook(questionnaire, columns, rows, lang)
-      downloadBlob(
-        exportFileName(questionnaire, 'xlsx', enumerator),
-        new Blob([buffer], { type: XLSX_MIME }),
-      )
+      await buildXlsx(current)
     } catch (caught) {
       setExportError(
         caught instanceof Error ? caught.message : 'The Excel file could not be created.',
@@ -113,15 +127,16 @@ export function ResponsesPanel({ questionnaire }: ResponsesPanelProps) {
     }
   }
 
-  function downloadCsv() {
+  function downloadCsv(target: ExportTarget = current) {
     downloadText(
-      exportFileName(questionnaire, 'csv', enumerator),
-      toCsv(columns, rows),
+      exportFileName(questionnaire, 'csv', target.enumerator),
+      toCsv(columns, target.rows),
       'text/csv;charset=utf-8',
     )
   }
 
-  function downloadJson() {
+  function downloadJson(target: ExportTarget = current) {
+    const label = target.enumerator === null ? null : target.enumerator || UNNAMED
     const payload = {
       questionnaire: {
         id: questionnaire.id,
@@ -129,12 +144,12 @@ export function ResponsesPanel({ questionnaire }: ResponsesPanelProps) {
         questions: questionnaire.questions,
       },
       // Present only in a one-person download, so the file says what it holds.
-      ...(enumeratorLabel === null ? {} : { filter: { enumerator: enumeratorLabel } }),
-      responses: shown,
-      rows,
+      ...(label === null ? {} : { filter: { enumerator: label } }),
+      responses: target.list,
+      rows: target.rows,
     }
     downloadText(
-      exportFileName(questionnaire, 'json', enumerator),
+      exportFileName(questionnaire, 'json', target.enumerator),
       JSON.stringify(payload, null, 2),
       'application/json',
     )
@@ -200,11 +215,11 @@ export function ResponsesPanel({ questionnaire }: ResponsesPanelProps) {
             <FileSpreadsheet data-icon="inline-start" />
             {building ? 'Preparing…' : 'Download Excel'}
           </Button>
-          <Button type="button" variant="outline" disabled={rows.length === 0} onClick={downloadCsv}>
+          <Button type="button" variant="outline" disabled={rows.length === 0} onClick={() => downloadCsv()}>
             <Download data-icon="inline-start" />
             Download CSV
           </Button>
-          <Button type="button" variant="outline" disabled={rows.length === 0} onClick={downloadJson}>
+          <Button type="button" variant="outline" disabled={rows.length === 0} onClick={() => downloadJson()}>
             <FileJson data-icon="inline-start" />
             Download JSON
           </Button>
@@ -357,6 +372,21 @@ export function ResponsesPanel({ questionnaire }: ResponsesPanelProps) {
               </div>
             </div>
           </>
+        )}
+
+        {canReset && responses.length > 0 && (
+          <ResetResponsesDialog
+            questionnaireId={questionnaire.id}
+            surveyTitle={pickText(questionnaire.title, questionnaire.defaultLanguage) || 'this survey'}
+            count={responses.length}
+            download={(format) =>
+              format === 'xlsx'
+                ? buildXlsx(everyone)
+                : format === 'csv'
+                  ? downloadCsv(everyone)
+                  : downloadJson(everyone)
+            }
+          />
         )}
       </CardContent>
     </Card>
