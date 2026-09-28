@@ -40,7 +40,7 @@ With the SMTP variables set, an email + password sign-up must enter a code sent 
 
 - **Admin** (`/admin`, a separate sign-in from the app): approves accounts, makes groups, hands surveys to builders and groups, assigns surveyors, and can build surveys too.
 - **Builder**: creates and edits surveys, previews them, downloads responses, follows the team dashboard and chat.
-- **Surveyor**: fills the surveys assigned to them, one question at a time, and sees the team's progress and chat.
+- **Surveyor**: fills the surveys assigned to them (the whole form on one scrolling page, like everyone else) and sees the team's progress and chat.
 
 The respondent-facing form (`/surveys/<id>/fill`) needs no sign-in, so a shared tablet works; a signed-in surveyor is recorded under their own name.
 

@@ -17,11 +17,12 @@ import {
 import { rangeProblem, rangesOverlap } from './serials'
 
 /**
- * Surveyor assignment: which approved surveyor accounts work on a survey.
- * Builders manage their own surveys' teams; admins manage every survey.
+ * Assignment: which approved accounts collect responses on a survey —
+ * surveyors, and builders the admin or a builder puts on it. Builders manage
+ * their own surveys' teams; admins manage every survey.
  */
 
-/** Approved surveyor accounts a builder can put on a team. Empty for surveyors. */
+/** Approved surveyor and builder accounts a builder can put on a team. Empty for surveyors. */
 export const surveyors = query({
   args: {},
   handler: async (ctx) => {
@@ -30,7 +31,8 @@ export const surveyors = query({
     const users = await ctx.db.query('users').collect()
     const rows = []
     for (const user of users) {
-      if (roleOf(user) !== 'surveyor' || !user.email) continue
+      const role = roleOf(user)
+      if (role === 'admin' || !user.email) continue
       // The same rule as signing in: approved by the admin, or added to a
       // group under an address the account has proved.
       if (!isApproved(await accessFor(ctx, user))) continue
@@ -39,13 +41,26 @@ export const surveyors = query({
         email: normalizeEmail(user.email),
         name: displayName(user),
         code: user.surveyorCode ?? null,
+        role,
       })
     }
-    return rows.sort((a, b) => (a.code ?? '').localeCompare(b.code ?? '') || a.name.localeCompare(b.name))
+    // The same address may have two accounts; list it once, as a surveyor
+    // when one of them is.
+    const byEmail = new Map<string, (typeof rows)[number]>()
+    for (const row of rows) {
+      const seen = byEmail.get(row.email)
+      if (!seen || (seen.role !== 'surveyor' && row.role === 'surveyor')) byEmail.set(row.email, row)
+    }
+    return [...byEmail.values()].sort(
+      (a, b) =>
+        (a.role === b.role ? 0 : a.role === 'surveyor' ? -1 : 1) ||
+        (a.code ?? '').localeCompare(b.code ?? '') ||
+        a.name.localeCompare(b.name),
+    )
   },
 })
 
-/** The surveyors assigned to one survey, for its team (surveyors included). */
+/** The surveyors and builders assigned to one survey, for its team (surveyors included). */
 export const members = query({
   args: { questionnaireId: v.string() },
   handler: async (ctx, { questionnaireId }) => {
@@ -68,6 +83,7 @@ export const members = query({
         email: assignment.email,
         name: user ? displayName(user) : assignment.email,
         code: user?.surveyorCode ?? null,
+        role: user ? roleOf(user) : null,
         signedUp: user !== null,
         range:
           assignment.rangeStart !== undefined && assignment.rangeEnd !== undefined
@@ -91,8 +107,13 @@ export const assign = mutation({
       .query('users')
       .withIndex('email', (q) => q.eq('email', address))
       .collect()
-    if (!accounts.some((account) => roleOf(account) === 'surveyor')) {
-      throw new ConvexError('That email is not an approved surveyor account.')
+    let eligible = false
+    for (const account of accounts) {
+      if (roleOf(account) === 'admin') continue
+      if (isApproved(await accessFor(ctx, account))) eligible = true
+    }
+    if (!eligible) {
+      throw new ConvexError('That email is not an approved surveyor or builder account.')
     }
     const existing = await ctx.db
       .query('assignments')

@@ -19,6 +19,9 @@ import type { MutationCtx, QueryCtx } from './_generated/server'
  *     and download them;
  *   - a **surveyor** only fills the surveys assigned to them (`assignments`)
  *     and follows the team's progress and chat; they never see answers.
+ *   A builder can be assigned to a survey too, to collect responses on it
+ *   (with a block of survey numbers, like a surveyor); the assignment also
+ *   opens that survey to them as a builder.
  *   Membership and assignment are by email, so they hold across Google and
  *   password sign-in for the same address.
  * - Everyone else is signed in but waiting: they see nothing.
@@ -121,7 +124,7 @@ export interface Access {
   groups: Doc<'groups'>[]
   /** Groups the user belongs to that are paused (not approved). */
   pending: Doc<'groups'>[]
-  /** App-level ids of the surveys assigned to this account as a surveyor. */
+  /** App-level ids of the surveys this account is assigned to (as a surveyor or a builder). */
   assigned: Set<string>
 }
 
@@ -224,14 +227,15 @@ interface Owned {
 
 /**
  * Whether this caller may edit the questionnaire and see its responses:
- * admins always, a builder for their own surveys and those of their active
- * groups.
+ * admins always, a builder for their own surveys, those of their active
+ * groups, and those the admin or a builder assigned them to.
  */
 export function canAccess(access: Access | null, questionnaire: Owned): boolean {
   if (!access) return false
   if (access.admin) return true
   if (!canBuild(access)) return false
   if (questionnaire.ownerId === access.user._id) return true
+  if (access.assigned.has(questionnaire.id)) return true
   return (
     questionnaire.groupId !== undefined &&
     access.groups.some((group) => group.id === questionnaire.groupId)
@@ -263,8 +267,8 @@ export function assertView(access: Access | null, questionnaire: Owned): void {
 }
 
 /**
- * Every questionnaire the caller may see: all for admins, own + groups' for
- * builders, the assigned ones for surveyors.
+ * Every questionnaire the caller may see: all for admins, own + groups' +
+ * assigned for builders, the assigned ones for surveyors.
  */
 export async function visibleQuestionnaires(
   ctx: Ctx,
@@ -293,6 +297,11 @@ export async function visibleQuestionnaires(
       .withIndex('by_group', (q) => q.eq('groupId', group.id))
       .collect()
     for (const row of rows) seen.set(row.id, row)
+  }
+  for (const id of access.assigned) {
+    if (seen.has(id)) continue
+    const row = await questionnaireByAppId(ctx, id)
+    if (row) seen.set(row.id, row)
   }
   return [...seen.values()]
 }

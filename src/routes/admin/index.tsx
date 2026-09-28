@@ -917,9 +917,19 @@ function SurveysTab({
   const { error, run } = useAction()
   // The survey whose survey-number blocks are open below its row.
   const [numbersFor, setNumbersFor] = useState<string | null>(null)
-  const surveyorAccounts = users.filter(
-    (person) => person.role === 'surveyor' && person.status === 'approved' && person.email,
-  )
+  // Who can collect responses on a survey: approved surveyors, and builders.
+  const surveyorAccounts = users
+    .filter(
+      (person) =>
+        (person.role === 'surveyor' || person.role === 'builder') &&
+        person.status === 'approved' &&
+        person.email,
+    )
+    .sort((a, b) => (a.role === b.role ? 0 : a.role === 'surveyor' ? -1 : 1))
+  const personLabel = (person: Person) =>
+    (person.name ?? person.email!) +
+    (person.code ? ` (${person.code})` : '') +
+    (person.role === 'builder' ? ' · builder' : '')
   // Who can own a survey: approved builders and admins.
   const ownerAccounts = users.filter(
     (person) => person.role !== 'surveyor' && person.status === 'approved',
@@ -943,7 +953,9 @@ function SurveysTab({
           Every survey: its owner, the group that shares it, and the surveyors who fill it. The
           owner and the group's builders can edit the survey and see its responses; a survey with
           neither is visible to admins only, so hand older surveys to a builder here. Putting a
-          surveyor on a survey is what makes it appear on their "My surveys" page. The target is
+          surveyor on a survey is what makes it appear on their "My surveys" page. Builders can be
+          put on a survey too: it then opens to them, and they collect responses under their own
+          name and, from Numbers, their own block of survey numbers. The target is
           the total number of responses the survey is after; a survey with design cards shares
           them out evenly over that many responses.
         </CardDescription>
@@ -1100,12 +1112,7 @@ function SurveysTab({
                                   }
                                 }}
                                 items={Object.fromEntries(
-                                  open.map((person) => [
-                                    person.email!,
-                                    person.code
-                                      ? `${person.name ?? person.email} (${person.code})`
-                                      : (person.name ?? person.email!),
-                                  ]),
+                                  open.map((person) => [person.email!, personLabel(person)]),
                                 )}
                               >
                                 <SelectTrigger size="sm" aria-label={`Add a surveyor to ${title}`}>
@@ -1114,8 +1121,7 @@ function SurveysTab({
                                 <SelectContent>
                                   {open.map((person) => (
                                     <SelectItem key={person.id} value={person.email!}>
-                                      {person.name ?? person.email}
-                                      {person.code ? ` (${person.code})` : ''}
+                                      {personLabel(person)}
                                     </SelectItem>
                                   ))}
                                 </SelectContent>

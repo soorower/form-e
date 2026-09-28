@@ -3,8 +3,8 @@ import { FillPage } from '#/components/pages/FillPage'
 
 /** Public: the tablet fill page needs no sign-in. */
 export const Route = createFileRoute('/surveys/$surveyId/fill')({
-  // ?steps=1 shows one question at a time for anyone, the way surveyors
-  // always get it, so a builder can try that flow.
+  // ?steps=1 shows one question at a time (Back / Next) for anyone; without
+  // it everyone, surveyors included, gets the whole form on one scrolling page.
   // ?paper=37 types in the printed paper form numbered 37.
   validateSearch: (search: Record<string, unknown>): { steps?: boolean; paper?: number } => {
     const paper = Math.floor(Number(search.paper))

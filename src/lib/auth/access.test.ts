@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { Doc } from '../../../convex/_generated/dataModel'
+import type { Access } from '../../../convex/access'
 import {
   accountStatus,
+  canAccess,
+  canView,
   emailTrusted,
   isAdminUser,
   roleOf,
@@ -79,5 +82,34 @@ describe('accountStatus', () => {
     expect(accountStatus(user({}), 1)).toBe('approved')
     expect(accountStatus(user({}), 0)).toBe('pending')
     expect(accountStatus(user({ status: 'pending' }), 0)).toBe('pending')
+  })
+})
+
+describe('who gets into a survey', () => {
+  const survey = { id: 'survey-1', ownerId: 'users:owner', groupId: 'group-1' }
+
+  function access(role: Access['role'], assigned: string[] = []): Access {
+    return {
+      user: user({ _id: 'users:2' as User['_id'], role: role === 'admin' ? 'admin' : role }),
+      admin: role === 'admin',
+      role,
+      status: 'approved',
+      groups: [],
+      pending: [],
+      assigned: new Set(assigned),
+    }
+  }
+
+  it('opens a survey to a builder the admin assigned to it', () => {
+    expect(canAccess(access('builder'), survey)).toBe(false)
+    expect(canAccess(access('builder', ['survey-1']), survey)).toBe(true)
+    expect(canView(access('builder', ['survey-1']), survey)).toBe(true)
+    expect(canAccess(access('builder', ['survey-2']), survey)).toBe(false)
+  })
+
+  it('lets an assigned surveyor fill and follow it, but not see answers', () => {
+    expect(canView(access('surveyor', ['survey-1']), survey)).toBe(true)
+    expect(canAccess(access('surveyor', ['survey-1']), survey)).toBe(false)
+    expect(canView(access('surveyor'), survey)).toBe(false)
   })
 })

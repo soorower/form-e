@@ -13,15 +13,22 @@ interface SurveyorAssignmentProps {
   canEdit: boolean
 }
 
+function optionLabel(person: { name: string; code: string | null; role: string }): string {
+  return (
+    person.name + (person.code ? ` (${person.code})` : '') + (person.role === 'builder' ? ' · builder' : '')
+  )
+}
+
 function errorText(error: unknown): string {
   if (error instanceof ConvexError && typeof error.data === 'string') return error.data
   return error instanceof Error ? error.message : 'Something went wrong.'
 }
 
 /**
- * The surveyor accounts on a survey's team. Assigning one is what makes the
- * survey appear on that surveyor's "My surveys" page; their responses are
- * recorded under their account name and code.
+ * The accounts that collect responses on a survey: surveyors, and builders
+ * put on it. Assigning a surveyor is what makes the survey appear on their
+ * "My surveys" page; assigning a builder opens the survey to them. Their
+ * responses are recorded under their account name and code.
  */
 export function SurveyorAssignment({ questionnaireId, canEdit }: SurveyorAssignmentProps) {
   const ready = useConvexReady()
@@ -57,6 +64,9 @@ export function SurveyorAssignment({ questionnaireId, canEdit }: SurveyorAssignm
               {member.code && (
                 <span className="font-mono text-[10px] font-semibold opacity-70">{member.code}</span>
               )}
+              {member.role === 'builder' && (
+                <span className="text-[10px] opacity-70">builder</span>
+              )}
               {canEdit ? (
                 <button
                   type="button"
@@ -81,21 +91,17 @@ export function SurveyorAssignment({ questionnaireId, canEdit }: SurveyorAssignm
               if (value) void run(assign({ questionnaireId, email: String(value) }))
             }}
             items={Object.fromEntries(
-              open.map((surveyor) => [
-                surveyor.email,
-                surveyor.code ? `${surveyor.name} (${surveyor.code})` : surveyor.name,
-              ]),
+              open.map((surveyor) => [surveyor.email, optionLabel(surveyor)]),
             )}
           >
-            <SelectTrigger size="sm" className="min-w-52" aria-label="Add a surveyor to the team">
+            <SelectTrigger size="sm" className="min-w-52" aria-label="Add a surveyor or builder to the team">
               <UserPlus className="size-3.5" aria-hidden="true" />
-              <SelectValue placeholder="Add a surveyor…" />
+              <SelectValue placeholder="Add a surveyor or builder…" />
             </SelectTrigger>
             <SelectContent>
               {open.map((surveyor) => (
                 <SelectItem key={surveyor.email} value={surveyor.email}>
-                  {surveyor.name}
-                  {surveyor.code ? ` (${surveyor.code})` : ''}
+                  {optionLabel(surveyor)}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -104,8 +110,8 @@ export function SurveyorAssignment({ questionnaireId, canEdit }: SurveyorAssignm
           available !== undefined && (
             <p className="text-xs text-muted-foreground">
               {available.length === 0
-                ? 'No approved surveyor accounts yet. The admin approves sign-ups as surveyors.'
-                : 'Every approved surveyor is already on this team.'}
+                ? 'No approved surveyor or builder accounts yet. The admin approves sign-ups.'
+                : 'Every approved surveyor and builder is already on this team.'}
             </p>
           )
         ))}

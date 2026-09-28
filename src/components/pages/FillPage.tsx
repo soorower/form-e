@@ -496,7 +496,9 @@ export function FillPage({
   // Whoever opens a share link is a respondent, even a team member trying it.
   const account = viewer?.approved && !share ? viewer : null
   const team = !share && (canBuild || isSurveyor)
-  const stepped = (isSurveyor && !share) || steps === true
+  // Everyone, surveyors included, gets the whole form on one scrolling page;
+  // ?steps=1 still shows one question at a time.
+  const stepped = steps === true
   const lockedName = account
     ? account.code
       ? `${account.displayName} (${account.code})`
