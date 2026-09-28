@@ -15,6 +15,7 @@ import {
 import { useArea, useSurveyPaths } from '#/components/auth/area'
 import { useConfirm } from '#/components/ConfirmProvider'
 import { useOutbox } from '#/components/offline/OutboxProvider'
+import { useHoldAppUpdate } from '#/components/offline/ServiceWorker'
 import { UnsentPanel } from '#/components/offline/UnsentPanel'
 import { useOfflineSurvey } from '#/hooks/useOfflineSurvey'
 import { useViewer } from '#/hooks/useViewer'
@@ -51,8 +52,8 @@ const DRAW_TIMEOUT_MS = 6_000
 /**
  * The respondent-facing page opened on the tablet in the field. Public, so a
  * shared tablet works without signing in (the enumerator picks a name). A
- * signed-in surveyor is recorded under their own account name and walks
- * through the questions one at a time.
+ * signed-in surveyor is recorded under their own account name. The whole form
+ * is one scrolling page; ?steps=1 walks through it one question at a time.
  */
 export function FillPage({
   surveyId,
@@ -677,6 +678,8 @@ function OfflineCopyNote({
  */
 function InterviewGuard({ active }: { active: boolean }) {
   const confirm = useConfirm()
+  // Nor may a new version of the app reload the page under it.
+  useHoldAppUpdate(active)
   useBlocker({
     shouldBlockFn: async () => {
       if (!active) return false

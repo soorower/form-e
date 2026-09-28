@@ -1,18 +1,57 @@
 import { useEffect, useSyncExternalStore } from 'react'
+import { useRouter } from '@tanstack/react-router'
 import { RefreshCw } from 'lucide-react'
 import { Button } from '#/components/ui/button'
 
 /**
  * Registers the service worker (sw/sw.js, built to /sw.js) that keeps the
- * app on the tablet so it opens with no connection, and tells the app when a
- * newer version has been downloaded and is waiting to take over.
+ * app on the tablet so it opens with no connection, and brings a newer
+ * version in once it has downloaded.
+ *
+ * A new version takes over by itself whenever nothing can be lost: when the
+ * app opens, and when the user moves to another page — but never while an
+ * interview has answers that are not submitted (`useHoldAppUpdate`). Until
+ * then "A new version is ready" offers it. Tablets used to keep the old
+ * version for days because only that banner could bring the new one in.
  */
 
 /** How often an open app looks for a new version. */
 const UPDATE_CHECK_MS = 60 * 60 * 1000
+/** Moving between pages or coming back to the app looks again, at most this often. */
+const NAV_CHECK_MS = 5 * 60 * 1000
 
 let waiting: ServiceWorker | null = null
+let registration: ServiceWorkerRegistration | null = null
+let lastCheck = 0
+/** Interviews on screen with answers not yet submitted. */
+let holds = 0
 const listeners = new Set<() => void>()
+
+/** Asks the server for a newer version (throttled unless `force`). */
+function checkForUpdate(force = false) {
+  if (!registration || (!force && Date.now() - lastCheck < NAV_CHECK_MS)) return
+  lastCheck = Date.now()
+  void registration.update().catch(() => undefined)
+}
+
+/** Brings in the waiting version now, unless an interview is under way. */
+function applyIfIdle() {
+  if (waiting && holds === 0) update()
+}
+
+/**
+ * Keeps a new version from taking over by itself while `active` (an
+ * interview with answers not yet submitted). The banner still offers it.
+ */
+export function useHoldAppUpdate(active: boolean) {
+  useEffect(() => {
+    if (!active) return
+    holds += 1
+    return () => {
+      holds -= 1
+    }
+  }, [active])
+}
 
 function setWaiting(worker: ServiceWorker | null) {
   waiting = worker
@@ -33,6 +72,28 @@ function watch(registration: ServiceWorkerRegistration) {
 }
 
 export function ServiceWorkerRegistration() {
+  const router = useRouter()
+
+  // Moving to another page leaves nothing behind (an unsubmitted interview
+  // blocks the move first), so a waiting version takes over there.
+  useEffect(
+    () =>
+      router.subscribe('onResolved', () => {
+        applyIfIdle()
+        checkForUpdate()
+      }),
+    [router],
+  )
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') checkForUpdate()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [])
+
   useEffect(() => {
     if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return
     if (!import.meta.env.PROD) {
@@ -46,9 +107,14 @@ export function ServiceWorkerRegistration() {
     let timer: ReturnType<typeof setInterval> | undefined
     void navigator.serviceWorker
       .register('/sw.js', { scope: '/' })
-      .then((registration) => {
-        watch(registration)
-        timer = setInterval(() => void registration.update().catch(() => undefined), UPDATE_CHECK_MS)
+      .then((registered) => {
+        registration = registered
+        lastCheck = Date.now()
+        watch(registered)
+        // Downloaded on an earlier visit: the app has only just opened, so
+        // nothing is under way yet.
+        applyIfIdle()
+        timer = setInterval(() => checkForUpdate(true), UPDATE_CHECK_MS)
       })
       .catch(() => undefined)
     return () => clearInterval(timer)
@@ -64,15 +130,17 @@ function subscribe(listener: () => void) {
 /** Takes the new version: the waiting worker steps in and the page reloads. */
 function update() {
   if (!waiting) return
+  const worker = waiting
+  setWaiting(null)
   navigator.serviceWorker.addEventListener('controllerchange', () => window.location.reload(), {
     once: true,
   })
-  waiting.postMessage({ type: 'SKIP_WAITING' })
+  worker.postMessage({ type: 'SKIP_WAITING' })
 }
 
 /**
- * "A new version is ready": shown once an update has downloaded. Never
- * applied by itself, so an interview on screen is never cut short.
+ * "A new version is ready": shown once an update has downloaded and could not
+ * take over by itself because an interview is on screen.
  */
 export function AppUpdateBanner() {
   const ready = useSyncExternalStore(
